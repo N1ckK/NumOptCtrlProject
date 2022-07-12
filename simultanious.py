@@ -91,7 +91,7 @@ dynamics = ca.Function('d', [z, controls, step_h], [rk4step_u(
 )])
 
 
-x = ca.SX.sym('x', (N + 1) * 2 * n_body * dimension)
+x = ca.SX.sym('x', (N + 1) * 2 * n_body * dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
 u = ca.SX.sym('u', 2 * N)
 
 # 1. Opt.
@@ -116,8 +116,29 @@ def cost_function_continous(x_current, u_current):
 
 
 def cost_function_integral_discrete(x, u):
-    # todo: simpson auf cost function anwenden
-    #return step_size / 6 * (cost_function_continous(x_i, u_i) + 4 * cost_function_continous)
+    '''
+        Computes the discretized cost of given state and control variables to
+        be minimized, using Simpson's rule.
+    '''
+    cost = h / 6 * (cost_function_continous(x[:2*n_body*dimension])
+                    + cost_function_continous(x[-2*n_body*dimension:]))
+    for i in range(1, N):
+        cost += h / 3 * (cost_function_continous(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
+                         + 2 * cost_function_continous([(x[(i-1)*2*n_body*dimension + j] + x[i*2*n_body*dimension + j]) / 2
+                                                        for j in range(2*n_body*dimension)]))
+    cost += h / 3 * cost_function_continous([(x[(N-1)*2*n_body*dimension + j] + x[N*2*n_body*dimension + j]) / 2
+                                             for j in range(2*n_body*dimension)])
+    return cost
+
+    # MATLAB Implementarion
+    # function T = simpson(n, f, I)
+    # len = I(2) - I(1);
+    # T = (len / (6 * n)) * (f(I(1)) + f(I(2)));
+    # for i = 1:n-1
+    #     T = T + (len / (3 * n)) * (f(I(1) + (len / n) * i) + 2 * f(I(1) + (len / n) * (i - (1/2))));
+    # end
+    # T = T + (len / (3 * n)) * f(I(1) + (len / n) * (n - (1/2)));
+    # end
 
 
 # def int_simpson(function, a: float, b: float) -> float:
@@ -149,10 +170,10 @@ res = solver(
     ubg = ubg,                # upper bound on g
 )
 
-# simpson implementieren (michael)
-# cost function implmentieren
+# simpson implementieren (michael) (done)
+# cost function implmentieren (done)
 # initial value
-# preamble
+# preamble (done)
 
 # n-body problem beschreiben (herleitung)
 # ocp diskretisieren (nick)
