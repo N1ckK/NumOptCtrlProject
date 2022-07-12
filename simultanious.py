@@ -73,8 +73,8 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
         if i == 0:
             r = controls[0]
             theta = controls[1]
-            rhs_acceleration_i[0] += r * ca.cos(theta)
-            rhs_acceleration_i[1] += r * ca.sin(theta)
+            rhs_acceleration_i[0] += r * ca.cos(theta) / body_masses[i]
+            rhs_acceleration_i[1] += r * ca.sin(theta) / body_masses[i]
 
         rhs_acceleration = ca.vertcat(rhs_acceleration, rhs_acceleration_i)
 
@@ -85,14 +85,15 @@ def ode(z, controls):
     return ode_general(z, controls, body_masses,
                        dimension, n_body)
 
+x = ca.SX.sym('x', (N + 1) * 2 * n_body * dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+u = ca.SX.sym('u', 2 * N)
+step_h = ca.SX.sym('h')
 
-dynamics = ca.Function('d', [z, controls, step_h], [rk4step_u(
-    ode, step_h, z, controls
+dynamics = ca.Function('d', [x, u, step_h], [rk4step_u(
+    ode, step_h, x, u
 )])
 
 
-x = ca.SX.sym('x', (N + 1) * 2 * n_body * dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
-u = ca.SX.sym('u', 2 * N)
 
 # 1. Opt.
 # x_0 --- x_1 ---- x_2 --- ... --- x_n
@@ -110,27 +111,26 @@ u = ca.SX.sym('u', 2 * N)
 # x(t_k) ------------------------------ x(t_k+1)
 
 
-def cost_function_continous(x_current, u_current):
+def cost_function_continous(t_current, x_current, u_current=None):
     dist = ca.norm_2(x[0: dimension] - x[dimension: 2 * dimension]) / cost_function_rescale_factor
-    return orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
-
+    return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
+    # return t_current * exp(1/x) * exp(x)
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule.
     '''
-    cost = h / 6 * (cost_function_continous(x[:2*n_body*dimension])
-                    + cost_function_continous(x[-2*n_body*dimension:]))
+    cost = h / 6 * (cost_function_continous(0, x[:2*n_body*dimension])
+                    + cost_function_continous(T, x[-2*n_body*dimension:]))
+    x_halfstep = dynamics(x[:2*n_body*dimension], u[:2], h / 2)
+    cost += h / 3 * cost_function_continous(h / 2, x_halfstep)
     for i in range(1, N):
+        x_halfstep = dynamics(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension], u[i*2:(i+1)*2], h / 2)
         cost += h / 3 * (cost_function_continous(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
-                         + 2 * cost_function_continous([(x[(i-1)*2*n_body*dimension + j] + x[i*2*n_body*dimension + j]) / 2
-                                                        for j in range(2*n_body*dimension)]))
-    cost += h / 3 * cost_function_continous([(x[(N-1)*2*n_body*dimension + j] + x[N*2*n_body*dimension + j]) / 2
-                                             for j in range(2*n_body*dimension)])
+                         + 2 * cost_function_continous((i + 1/2) * h, x_halfstep))
     return cost
-
-    # MATLAB Implementarion
+    # 
     # function T = simpson(n, f, I)
     # len = I(2) - I(1);
     # T = (len / (6 * n)) * (f(I(1)) + f(I(2)));
@@ -152,7 +152,11 @@ def cost_function_integral_discrete(x, u):
 
 # build nlp
 
-constraints = ca.vertcat(controls[::2], controls[1::2])
+constraints = []
+lbg = []
+ubg = []
+
+ca.vertcat(controls[::2], controls[1::2])
 lbg = [-thrust_max] * N + [-pi] * N
 ubg = [thrust_max] * N + [pi] * N
 
@@ -170,13 +174,15 @@ res = solver(
     ubg = ubg,                # upper bound on g
 )
 
-# simpson implementieren (michael) (done)
-# cost function implmentieren (done)
-# initial value
-# preamble (done)
+# TODO: (Nick)
+# (initial value)
+# constraints implementieren
+# n-body problem beschreiben (Herleitung)
+# ocp diskretisieren
 
-# n-body problem beschreiben (herleitung)
-# ocp diskretisieren (nick)
-# florian email
-# gibhub
-# overleaf
+# TODO: (Michael)
+# Einleitung zum Report schreiben
+# Diskretisierung (Simpson-Regel) beschreiben
+
+# TODO: (both)
+# Code kommentieren
