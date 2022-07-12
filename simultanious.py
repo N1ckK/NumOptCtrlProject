@@ -17,6 +17,8 @@ n_body = 2
 dimension = 2
 thrust_max = 0.3
 
+x_0_bar = 0 # some start value #todo
+
 # orbit
 orbit = 10
 cost_function_rescale_factor = 0.759835685652
@@ -82,10 +84,11 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
 
 def ode(z, controls):
-    return ode_general(z, controls, body_masses,
-                       dimension, n_body)
+    return ode_general(z, controls, body_masses, dimension, n_body)
 
-x = ca.SX.sym('x', (N + 1) * 2 * n_body * dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+
+state_dimension = 2 * n_body * dimension
+x = ca.SX.sym('x', (N + 1) * state_dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
 u = ca.SX.sym('u', 2 * N)
 step_h = ca.SX.sym('h')
 
@@ -130,7 +133,7 @@ def cost_function_integral_discrete(x, u):
         cost += h / 3 * (cost_function_continous(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
                          + 2 * cost_function_continous((i + 1/2) * h, x_halfstep))
     return cost
-    # 
+    #
     # function T = simpson(n, f, I)
     # len = I(2) - I(1);
     # T = (len / (6 * n)) * (f(I(1)) + f(I(2)));
@@ -156,9 +159,36 @@ constraints = []
 lbg = []
 ubg = []
 
-ca.vertcat(controls[::2], controls[1::2])
-lbg = [-thrust_max] * N + [-pi] * N
-ubg = [thrust_max] * N + [pi] * N
+# x_0 = x_0_bar
+constraints.append(x[0:state_dimension] - x_0_bar)
+lbg += [0] * state_dimension
+ubg += [0] * state_dimension
+
+for i in range(0, N):
+    constraints.append(
+        # x_k+1 - F(xk, uk)
+        x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
+            x[i * state_dimension : (i+1) * state_dimension],
+            u[2*i:2*i+1]
+            h
+        )
+    )
+    lbg += [0] * state_dimension
+    ubg += [0] * state_dimension
+
+# thrust_max <= u_k1 = r_k <= thrust_max
+contraints.append(controls[::2])
+lbg += [-thrust_max] * N
+ubg += [thrust_max] * N
+
+# -pi <= u_k2 = theta_k <= pi
+constraints.append(controls[1::2])
+lbg += [-pi] * N
+ubg += [pi] * N
+
+
+constraints = ca.vertcat(*constraints)
+
 
 nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
        'g': constraints}
@@ -176,7 +206,7 @@ res = solver(
 
 # TODO: (Nick)
 # (initial value)
-# constraints implementieren
+##### constraints implementieren
 # n-body problem beschreiben (Herleitung)
 # ocp diskretisieren
 
