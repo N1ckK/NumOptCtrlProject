@@ -8,9 +8,9 @@ from ode import *
 from math import *
 
 # Time horizon
-T = 100
+T = 700
 # Number of discrete time points
-N = 1000
+N = 150
 # Stepsize
 h = T / N
 # Gravitational constant
@@ -23,17 +23,20 @@ n_body = 2
 # dimension to simulate in
 dimension = 2
 # maximum thrust of the rocket
-thrust_max = 1.5
+thrust_max = 0.0002
 
 # initial positions and velocites of bodies:
 
 # body1_pos.x, body1_pos.y, body2_pos.x, body2_pos.y,
 # body1_vel.x, body1_vel.y, body2_vel.x, body2_vel.y,
+
+rr = sqrt(0.3**2 + 3 ** 2)
+
 x_0_bar = [100, 0, 0, 0,
-           -0.7, 0.8, 0.005, 0.005]
+           rr * cos(pi/2), rr * sin(pi/2), 0.005, 0.005]
 
 # desired circular orbit height
-orbit = 20
+orbit = 190
 
 # just some rescale factor coming from the cost function that was chosen
 cost_function_rescale_factor = 0.759835685652
@@ -134,24 +137,25 @@ u = ca.SX.sym('u', 2 * N)
 
 
 def cost_function_continous(t_current, x_current, u_current=None):
-    dist = ca.norm_2(x_current[0: dimension] - x_current[dimension: 2 * dimension]) / cost_function_rescale_factor
-    return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
-    # return t_current * exp(1/x) * exp(x)
+    dist = ca.norm_2(x_current[0: dimension] - x_current[dimension: 2 * dimension])
+    #return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
+    return t_current * (dist - orbit) ** 2 + u_current[0] ** 2
+    #return t_current * (ca.exp(dist/orbit) / (dist/orbit)) / 30
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:state_dimension])
-                    + cost_function_continous(T, x[-state_dimension:]))
+    cost = h / 6 * (cost_function_continous(0, x[:state_dimension], u[0:2])
+                    + cost_function_continous(T, x[-state_dimension:], u[-2,-1]))
     x_halfstep = dynamics(x[:state_dimension], u[:2], h / 2)
-    cost += h / 3 * cost_function_continous(h / 2, x_halfstep)
+    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[0:2])
     for i in range(1, N):
         x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension], u[i*2:(i+1)*2], h / 2)
                                                 #####
-        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:(i+1)*state_dimension])
-                         + 2 * cost_function_continous((i + 1/2) * h, x_halfstep))
+        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:(i+1)*state_dimension], u[2*i:2*i+2])
+                         + 2 * cost_function_continous((i + 1/2) * h, x_halfstep, u[2*i:2*i+2]))
     return cost
     #
     # function T = simpson(n, f, I)
@@ -189,7 +193,7 @@ for i in range(0, N):
         # x_k+1 - F(xk, uk)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
-            u[2*i:2*i+1],
+            u[2*i:2*i+2],
             h
         )
     )
@@ -202,9 +206,9 @@ lbg += [thrust_max / 3] * N
 ubg += [thrust_max] * N
 
 # -pi <= u_k2 = theta_k <= pi
-constraints.append(u[1::2])
-lbg += [-pi] * N
-ubg += [pi] * N
+# constraints.append(u[1::2])
+# lbg += [-pi] * N
+# ubg += [pi] * N
 
 constraints = ca.vertcat(*constraints)
 
@@ -216,7 +220,7 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 # build initial guess
 
 x_initial = x_0_bar.copy()
-u_initial = [thrust_max / 2, pi] * N
+u_initial = [0] * (2 * N)
 for i in range(N):
     x_initial = np.concatenate(
         (
@@ -256,6 +260,7 @@ for b_index in range(n_body):
     lines.append(line)
 
 def update(num, optimal_trajectory, lines):
+    #print(cost_function_continous(num, optimal_trajectory[num,:]))
     for b_index in range(n_body):
         lines[b_index].set_data(optimal_trajectory[:num,b_index * dimension],
                                 optimal_trajectory[:num,b_index * dimension + 1])
@@ -263,6 +268,12 @@ def update(num, optimal_trajectory, lines):
 
 ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, lines],
                           interval=25, blit=True, frames=N)
+
+circle = plt.Circle((0,0), 190, fill=False)
+ax.add_patch(circle)
+
+circle = plt.Circle((0,0), 100, fill=True)
+ax.add_patch(circle)
 
 plt.show()
 
