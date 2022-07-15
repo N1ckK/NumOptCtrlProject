@@ -17,10 +17,13 @@ n_body = 2
 dimension = 2
 thrust_max = 0.3
 
-x_0_bar = 0 # some start value #todo
+# body1_pos.x, body1_pos.y, body2_pos.x, body2_pos.y,
+# body1_vel.x, body1_vel.y, body2_vel.x, body2_vel.y,
+x_0_bar = [100, 0, 0, 0,
+           3, 0, 0, 0]
 
 # orbit
-orbit = 10
+orbit = 50
 cost_function_rescale_factor = 0.759835685652
 
 
@@ -88,13 +91,18 @@ def ode(z, controls):
 
 
 state_dimension = 2 * n_body * dimension
-x = ca.SX.sym('x', (N + 1) * state_dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
-u = ca.SX.sym('u', 2 * N)
+
+x_single = ca.SX.sym('x', state_dimension)
+u_single = ca.SX.sym('u', 2)
 step_h = ca.SX.sym('h')
 
-dynamics = ca.Function('d', [x, u, step_h], [rk4step_u(
-    ode, step_h, x, u
+dynamics = ca.Function('d', [x_single, u_single, step_h], [rk4step_u(
+    ode, step_h, x_single, u_single
 )])
+
+
+x = ca.SX.sym('x', (N + 1) * state_dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+u = ca.SX.sym('u', 2 * N)
 
 
 
@@ -130,7 +138,8 @@ def cost_function_integral_discrete(x, u):
     cost += h / 3 * cost_function_continous(h / 2, x_halfstep)
     for i in range(1, N):
         x_halfstep = dynamics(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension], u[i*2:(i+1)*2], h / 2)
-        cost += h / 3 * (cost_function_continous(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
+                                                #####
+        cost += h / 3 * (cost_function_continous(i * h, x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
                          + 2 * cost_function_continous((i + 1/2) * h, x_halfstep))
     return cost
     #
@@ -169,7 +178,7 @@ for i in range(0, N):
         # x_k+1 - F(xk, uk)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
-            u[2*i:2*i+1]
+            u[2*i:2*i+1],
             h
         )
     )
@@ -177,12 +186,12 @@ for i in range(0, N):
     ubg += [0] * state_dimension
 
 # thrust_max <= u_k1 = r_k <= thrust_max
-contraints.append(controls[::2])
+constraints.append(u[::2])
 lbg += [-thrust_max] * N
 ubg += [thrust_max] * N
 
 # -pi <= u_k2 = theta_k <= pi
-constraints.append(controls[1::2])
+constraints.append(u[1::2])
 lbg += [-pi] * N
 ubg += [pi] * N
 
@@ -195,9 +204,27 @@ nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
 
 solver = ca.nlpsol('solver', 'ipopt', nlp)
 
+# build initial guess
+
+
+
+x_initial = x_0_bar.copy()
+u_initial = [0] * 2 * N
+for i in range(N):
+    x_initial = np.concatenate(
+        (
+            x_initial, dynamics(x_initial[i*state_dimension:(i + 1) * state_dimension],
+                                  u_initial[2*i:2*i+2], h).full().flatten()
+        )
+    )
+
+initial_guess = np.concatenate((x_initial,u_initial)).tolist()
+
+#import pdb; pdb.set_trace()
+
 # Solve the NLP
 res = solver(
-    x0 = [10, pi] * 5 + [0] * (2 * N_T - 10),    # solution guess
+    x0 = initial_guess,    # solution guess
     lbx = -ca.inf,          # lower bound on x
     ubx = ca.inf,           # upper bound on x
     lbg = lbg,                # lower bound on g
