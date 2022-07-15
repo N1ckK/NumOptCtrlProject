@@ -134,8 +134,8 @@ u = ca.SX.sym('u', 2 * N)
 
 
 def cost_function_continous(t_current, x_current, u_current=None):
-    dist = ca.norm_2(x[0: dimension] - x[dimension: 2 * dimension]) / cost_function_rescale_factor
-    return orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
+    dist = ca.norm_2(x_current[0: dimension] - x_current[dimension: 2 * dimension]) / cost_function_rescale_factor
+    return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
     # return t_current * exp(1/x) * exp(x)
 
 def cost_function_integral_discrete(x, u):
@@ -143,14 +143,14 @@ def cost_function_integral_discrete(x, u):
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:2*n_body*dimension])
-                    + cost_function_continous(T, x[-2*n_body*dimension:]))
-    x_halfstep = dynamics(x[:2*n_body*dimension], u[:2], h / 2)
+    cost = h / 6 * (cost_function_continous(0, x[:state_dimension])
+                    + cost_function_continous(T, x[-state_dimension:]))
+    x_halfstep = dynamics(x[:state_dimension], u[:2], h / 2)
     cost += h / 3 * cost_function_continous(h / 2, x_halfstep)
     for i in range(1, N):
-        x_halfstep = dynamics(x[i*2*n_body*dimension:(i+1)*2*n_body*dimension], u[i*2:(i+1)*2], h / 2)
+        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension], u[i*2:(i+1)*2], h / 2)
                                                 #####
-        cost += h / 3 * (cost_function_continous(i * h, x[i*2*n_body*dimension:(i+1)*2*n_body*dimension])
+        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:(i+1)*state_dimension])
                          + 2 * cost_function_continous((i + 1/2) * h, x_halfstep))
     return cost
     #
