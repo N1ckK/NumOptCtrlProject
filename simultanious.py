@@ -7,23 +7,35 @@ from ode import *
 
 from math import *
 
+# Time horizon
 T = 100
+# Number of discrete time points
 N = 1000
+# Stepsize
 h = T / N
-grav_const = 0.1
+# Gravitational constant
+grav_const = 0.08
 
-body_masses = (0.05, 1000000)
+# masses of the simulated bodies (rocket, planet)
+body_masses = (0.05, 10000)
+# number of bodies
 n_body = 2
+# dimension to simulate in
 dimension = 2
-thrust_max = 0.3
+# maximum thrust of the rocket
+thrust_max = 1.5
+
+# initial positions and velocites of bodies:
 
 # body1_pos.x, body1_pos.y, body2_pos.x, body2_pos.y,
 # body1_vel.x, body1_vel.y, body2_vel.x, body2_vel.y,
 x_0_bar = [100, 0, 0, 0,
-           3, 0, 0, 0]
+           -0.7, 0.8, 0.005, 0.005]
 
-# orbit
-orbit = 50
+# desired circular orbit height
+orbit = 20
+
+# just some rescale factor coming from the cost function that was chosen
 cost_function_rescale_factor = 0.759835685652
 
 
@@ -100,10 +112,9 @@ dynamics = ca.Function('d', [x_single, u_single, step_h], [rk4step_u(
     ode, step_h, x_single, u_single
 )])
 
-
-x = ca.SX.sym('x', (N + 1) * state_dimension)  # N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+#  N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+x = ca.SX.sym('x', (N + 1) * state_dimension)
 u = ca.SX.sym('u', 2 * N)
-
 
 
 # 1. Opt.
@@ -124,7 +135,7 @@ u = ca.SX.sym('u', 2 * N)
 
 def cost_function_continous(t_current, x_current, u_current=None):
     dist = ca.norm_2(x[0: dimension] - x[dimension: 2 * dimension]) / cost_function_rescale_factor
-    return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
+    return orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
     # return t_current * exp(1/x) * exp(x)
 
 def cost_function_integral_discrete(x, u):
@@ -187,7 +198,7 @@ for i in range(0, N):
 
 # thrust_max <= u_k1 = r_k <= thrust_max
 constraints.append(u[::2])
-lbg += [-thrust_max] * N
+lbg += [thrust_max / 3] * N
 ubg += [thrust_max] * N
 
 # -pi <= u_k2 = theta_k <= pi
@@ -195,9 +206,7 @@ constraints.append(u[1::2])
 lbg += [-pi] * N
 ubg += [pi] * N
 
-
 constraints = ca.vertcat(*constraints)
-
 
 nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
        'g': constraints}
@@ -206,10 +215,8 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 
 # build initial guess
 
-
-
 x_initial = x_0_bar.copy()
-u_initial = [0] * 2 * N
+u_initial = [thrust_max / 2, pi] * N
 for i in range(N):
     x_initial = np.concatenate(
         (
@@ -231,8 +238,37 @@ res = solver(
     ubg = ubg,                # upper bound on g
 )
 
+optimal_variables = res["x"].full()
+
+print(optimal_variables[(N + 1) * state_dimension+1:])
+
+optimal_trajectory = np.reshape(
+    optimal_variables[:(N + 1) * state_dimension],
+    (N + 1, state_dimension)
+)[:,0:4]
+
+fig, ax = plt.subplots()
+lines = []
+
+for b_index in range(n_body):
+    line, = ax.plot(optimal_trajectory[:,b_index * dimension],
+                    optimal_trajectory[:,b_index * dimension + 1])
+    lines.append(line)
+
+def update(num, optimal_trajectory, lines):
+    for b_index in range(n_body):
+        lines[b_index].set_data(optimal_trajectory[:num,b_index * dimension],
+                                optimal_trajectory[:num,b_index * dimension + 1])
+    return lines
+
+ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, lines],
+                          interval=25, blit=True, frames=N)
+
+plt.show()
+
+
 # TODO: (Nick)
-# (initial value)
+##### (initial value)
 ##### constraints implementieren
 # n-body problem beschreiben (Herleitung)
 # ocp diskretisieren
