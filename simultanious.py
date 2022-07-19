@@ -24,23 +24,23 @@ n_body = 2
 # dimension to simulate in
 dimension = 2
 # maximum thrust of the rocket
-thrust_max = 0.0002
+thrust_max = 0.0001
 
 # initial positions and velocites of bodies:
 
 # body1_pos.x, body1_pos.y, body2_pos.x, body2_pos.y,
 # body1_vel.x, body1_vel.y, body2_vel.x, body2_vel.y,
 
-rr = sqrt(0.3**2 + 3 ** 2)
+rr = sqrt(0.3 ** 2 + 3 ** 2)
+
 
 x_0_bar = [100, 0, 0, 0,
-           rr * cos(pi/2), rr * sin(pi/2), 0, 0]
+           rr * cos(pi/3), rr * sin(pi/3), 0, 0]
 
 # desired circular orbit height
 orbit = 190
 
 # just some rescale factor coming from the cost function that was chosen
-cost_function_rescale_factor = 0.759835685652
 
 
 def rk4step_u(ode, h, x, u):
@@ -270,7 +270,7 @@ optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
 
 print(ca.norm_2(optimal_trajectory[N,4:6]), orbital_vel)
 
-terminal_sim = 0
+terminal_sim = 1000
 
 for i in range(N, N+terminal_sim):
     optimal_trajectory = np.vstack([optimal_trajectory,
@@ -318,7 +318,8 @@ def update(num, optimal_trajectory, objects):
     )
 
     for b_index in range(n_body):
-        sli = max(0, num - 30) # start line index
+        sli = 0
+        #sli = max(0, num - 30) # start line index
         objects[1 + 2 * b_index].set_data(optimal_trajectory[sli:num,b_index * dimension],
                                 optimal_trajectory[sli:num,b_index * dimension + 1])
         objects[1 + 2 * b_index + 1].set_data(optimal_trajectory[num,b_index * dimension],
@@ -334,12 +335,17 @@ ax.add_patch(circle)
 circle = plt.Circle((0,0), 100, fill=True)
 ax.add_patch(circle)
 
+ax.set_aspect('equal', adjustable='box')
+
+import networkx as nx
+from matplotlib.animation import FuncAnimation, PillowWriter
+
 plt.show()
+#import PIL
+#ani.save('swing_by_2.gif', writer='imagemagick', fps=120)
 
 
 # TODO: (Nick)
-##### (initial value)
-##### constraints implementieren
 # n-body problem beschreiben (Herleitung)
 # ocp diskretisieren
 
