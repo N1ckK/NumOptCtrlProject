@@ -33,8 +33,10 @@ thrust_max = 0.0001
 
 rr = sqrt(0.3 ** 2 + 3 ** 2)
 
+# radius of the planet
+surface = 100
 
-x_0_bar = [100, 0, 0, 0,
+x_0_bar = [surface, 0, 0, 0,
            rr * cos(pi/3), rr * sin(pi/3), 0, 0]
 
 # desired circular orbit height
@@ -109,16 +111,17 @@ def ode(z, controls):
 state_dimension = 2 * n_body * dimension
 
 x_single = ca.SX.sym('x', state_dimension)
-u_single = ca.SX.sym('u', 2)
+u_single = ca.SX.sym('u', dimension)
 step_h = ca.SX.sym('h')
 
 dynamics = ca.Function('d', [x_single, u_single, step_h], [rk4step_u(
     ode, step_h, x_single, u_single
 )])
 
-#  N+1 states, position and velocity, n_body bodies, dimenstion dimensions
+# N+1 states, position and velocity, n_body bodies, dimenstion dimensions
 x = ca.SX.sym('x', (N + 1) * state_dimension)
-u = ca.SX.sym('u', 2 * N)
+# N states, thrust and dimension-1 angles
+u = ca.SX.sym('u', N * dimension)
 
 
 # 1. Opt.
@@ -141,34 +144,42 @@ orbital_vel = sqrt(sun_mass * grav_const / orbit)
 
 def cost_function_continous(t_current, x_current, u_current=None):
     dist = ca.norm_2(x_current[0: dimension] - x_current[dimension: 2 * dimension])
-    #return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
+    # return t_current * orbit * (1 - dist / orbit) / dist + (dist / orbit) ** 3
     return t_current * (dist - orbit) ** 2 + 500 * u_current[0] ** 2
-    #return t_current * (ca.exp(dist/orbit) / (dist/orbit)) / 30
+    # return t_current * (ca.exp(dist/orbit) / (dist/orbit)) / 30
+    # dist_to_surface = sqrt((x_current[0]-x_current[2]) ** 2 + (x_current[1]-x_current[3]) ** 2) - surface
+    # return exp(orbit/dist_to_surface) * exp(dist_to_surface/orbit)
+
+
+def euclidean_of_polar2(polar_vector_a, polar_vector_b):
+    '''
+        Calculates the euclidean norm of a two dimensional vector given in polar coordinates.
+    '''
+    eucl_vector_a = [polar_vector_a[0] * cos(polar_vector_a[1]), polar_vector_a[0] * sin(polar_vector_a[1])]
+    eucl_vector_b = [polar_vector_b[0] * cos(polar_vector_b[1]), polar_vector_b[0] * sin(polar_vector_b[1])]
+    return sqrt((eucl_vector_a[0]-eucl_vector_b[0]) ** 2 + (eucl_vector_a[1]-eucl_vector_b[1]) ** 2)
+
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:state_dimension], u[0:2])
-                    + cost_function_continous(T, x[-state_dimension:], u[-2,-1]))
-    x_halfstep = dynamics(x[:state_dimension], u[:2], h / 2)
-    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[0:2])
+    cost = h / 6 * (cost_function_continous(0, x[:state_dimension], u[:dimension])
+                    + cost_function_continous(T, x[-state_dimension:], u[-dimension:]))
+    # First and last term in Simpson, both appear only once
+    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
+    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
+    # First half step of Simpson, not treated within the for-loop
     for i in range(1, N):
-        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension], u[i*2:(i+1)*2], h / 2)
-                                                #####
-        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:(i+1)*state_dimension], u[2*i:2*i+2])
-                         + 2 * cost_function_continous((i + 1/2) * h, x_halfstep, u[2*i:2*i+2]))
+        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension], u[i*dimension:(i+1)*dimension], h / 2)
+        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:(i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
+                         # Each of the other non half step terms appears twice
+                         + 2 * cost_function_continous((i + 1/2) * h, x_halfstep, u[dimension*i:dimension*(i+1)]))
+                         # The remaining half steps
+        # cost += euclidean_of_polar2(u[2*(i-1):2*i], u[2*i:2*(i+1)]) / h
+        # Experimental, punish changes in controls
     return cost
-    #
-    # function T = simpson(n, f, I)
-    # len = I(2) - I(1);
-    # T = (len / (6 * n)) * (f(I(1)) + f(I(2)));
-    # for i = 1:n-1
-    #     T = T + (len / (3 * n)) * (f(I(1) + (len / n) * i) + 2 * f(I(1) + (len / n) * (i - (1/2))));
-    # end
-    # T = T + (len / (3 * n)) * f(I(1) + (len / n) * (n - (1/2)));
-    # end
 
 
 # def int_simpson(function, a: float, b: float) -> float:
@@ -193,7 +204,7 @@ ubg += [0] * state_dimension
 
 for i in range(0, N):
     constraints.append(
-        # x_k+1 - F(xk, uk)
+        # x_k+1 - F(x_k, u_k)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
             u[2*i:2*i+2],
@@ -204,12 +215,12 @@ for i in range(0, N):
     ubg += [0] * state_dimension
 
 # thrust_max <= u_k1 = r_k <= thrust_max
-constraints.append(u[::2])
+constraints.append(u[::dimension])
 lbg += [thrust_max / 3] * N
 ubg += [thrust_max] * N
 
 # -pi <= u_k2 = theta_k <= pi
-# constraints.append(u[1::2])
+# constraints.append(u[1::dimension])
 # lbg += [-pi] * N
 # ubg += [pi] * N
 
@@ -231,12 +242,13 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 # build initial guess
 
 x_initial = x_0_bar.copy()
+# u_initial = [rr * cos(pi/3), rr * sin(pi/3)] + [0] * N
 u_initial = [0] * (2 * N)
 for i in range(N):
     x_initial = np.concatenate(
         (
             x_initial, dynamics(x_initial[i*state_dimension:(i + 1) * state_dimension],
-                                  u_initial[2*i:2*i+2], h).full().flatten()
+                                  u_initial[dimension*i:dimension*(i+1)], h).full().flatten()
         )
     )
 
@@ -255,7 +267,7 @@ res = solver(
 
 optimal_variables = res["x"].full()
 
-#print(optimal_variables[(N + 1) * state_dimension+1:])
+# print(optimal_variables[(N + 1) * state_dimension+1:])
 
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
@@ -305,7 +317,7 @@ for b_index in range(n_body):
     objects.append(dot)
 
 def update(num, optimal_trajectory, objects):
-    #print(cost_function_continous(num, optimal_trajectory[num,:]))
+    # print(cost_function_continous(num, optimal_trajectory[num,:]))
 
     objects[0].xy = (
                      optimal_trajectory[num,0 * dimension] + vrf * optimal_controls[num, 0] * cos(optimal_controls[num, 1]),
