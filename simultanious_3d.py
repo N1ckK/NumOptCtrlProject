@@ -22,7 +22,7 @@ body_masses = (0.05, sun_mass)
 # number of bodies
 n_body = 2
 # dimension to simulate in
-dimension = 2
+dimension = 3
 # maximum thrust of the rocket
 thrust_max = 0.0001
 
@@ -36,11 +36,16 @@ rr = sqrt(0.3 ** 2 + 3 ** 2)
 # radius of the planet
 surface = 100
 
-x_0_bar = [surface, 0, 0, 0,
-           rr * cos(pi/3), rr * sin(pi/3), 0, 0]
+x_0_bar = [surface, 0, 0,
+           0, 0, 0,
+           rr * sin(pi/3) * cos(0), rr * sin(0) * sin(pi/3), rr * cos(pi/3),
+           0, 0, 0]
 
 # desired circular orbit height
 orbit = 190
+
+# rotational matrix
+Q = np.identity(3)
 
 # just some rescale factor coming from the cost function that was chosen
 
@@ -89,15 +94,18 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
             body_position_i = z[(i * dimension): ((i + 1) * dimension)]
             body_position_j = z[(j * dimension): ((j + 1) * dimension)]
+
             rhs_acceleration_i += (grav_const * body_masses[j]
                              / (ca.norm_2(body_position_i - body_position_j) ** 3)
                              * (body_position_j - body_position_i))
 
         if i == 0:
             r = controls[0]
-            theta = controls[1]
-            rhs_acceleration_i[0] += r * ca.cos(theta) / body_masses[i]
-            rhs_acceleration_i[1] += r * ca.sin(theta) / body_masses[i]
+            phi = controls[1]
+            theta = controls[2]
+            rhs_acceleration_i[0] += r * ca.sin(phi) * ca.cos(theta) / body_masses[i]
+            rhs_acceleration_i[1] += r * ca.sin(phi) * ca.sin(theta) / body_masses[i]
+            rhs_acceleration_i[2] += r * ca.cos(phi) / body_masses[i]
 
         rhs_acceleration = ca.vertcat(rhs_acceleration, rhs_acceleration_i)
 
@@ -105,7 +113,7 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
 
 def ode(z, controls):
-    return ode_general(z, controls, body_masses, dimension, n_body)
+    return ode_general(z, controls, body_masses, n_body, dimension)
 
 
 state_dimension = 2 * n_body * dimension
@@ -152,13 +160,13 @@ def cost_function_continous(t_current, x_current, u_current=None):
     return u_current[0]
 
 
-def euclidean_of_polar2(polar_vector_a, polar_vector_b):
-    '''
-        Calculates the euclidean norm of a two dimensional vector given in polar coordinates.
-    '''
-    eucl_vector_a = [polar_vector_a[0] * cos(polar_vector_a[1]), polar_vector_a[0] * sin(polar_vector_a[1])]
-    eucl_vector_b = [polar_vector_b[0] * cos(polar_vector_b[1]), polar_vector_b[0] * sin(polar_vector_b[1])]
-    return ca.norm_2(eucl_vector_a - eucl_vector_b)
+# def euclidean_of_polar2(polar_vector_a, polar_vector_b):
+#     '''
+#         Calculates the euclidean norm of a two dimensional vector given in polar coordinates.
+#     '''
+#     eucl_vector_a = [polar_vector_a[0] * cos(polar_vector_a[1]), polar_vector_a[0] * sin(polar_vector_a[1])]
+#     eucl_vector_b = [polar_vector_b[0] * cos(polar_vector_b[1]), polar_vector_b[0] * sin(polar_vector_b[1])]
+#     return ca.norm_2(eucl_vector_a - eucl_vector_b)
 
 
 def cost_function_integral_discrete(x, u):
@@ -208,7 +216,7 @@ for i in range(0, N):
         # x_k+1 - F(x_k, u_k)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
-            u[2*i:2*i+2],
+            u[dimension*i:dimension*i+dimension],
             h
         )
     )
@@ -217,7 +225,7 @@ for i in range(0, N):
 
 for i in range(0, N):  # ceil(50 / h), N):  # Don't apply these constraints to the time steps until t = 50
     x_current = x[i * state_dimension : (i+1) * state_dimension]
-    constraints.append(ca.norm_2(x_current[0:2] - x_current[4:6]))
+    constraints.append(ca.norm_2(x_current[0:dimension] - x_current[dimension:2*dimension]))
     lbg += [1.1 * surface]
     ubg += [ca.inf]
 
@@ -235,21 +243,21 @@ ubg += [thrust_max] * N
 x_terminal = x[N * state_dimension: (N+1) * state_dimension]
 
 constraints.append(
-    ca.norm_2(x_terminal[4:6]) - orbital_vel
+    ca.norm_2(x_terminal[6:9]) - orbital_vel
 )
 
 lbg += [0]
 ubg += [0]
 
 constraints.append(
-    ca.dot(x_terminal[4:6], x_terminal[0:2] - x_terminal[2:4])
+    ca.dot(x_terminal[6:9], x_terminal[0:3] - x_terminal[3:6])
 )
 
 lbg += [0]
 ubg += [0]
 
 constraints.append(
-    ca.norm_2(x_terminal[0:2] - x_terminal[2:4]) - orbit
+    ca.norm_2(x_terminal[0:3] - x_terminal[3:6]) - orbit
 )
 
 lbg += [0]
@@ -267,7 +275,7 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 
 x_initial = x_0_bar.copy()
 # u_initial = [rr * cos(pi/3), rr * sin(pi/3)] + [0] * N
-u_initial = [0] * (2 * N)
+u_initial = [0] * (3 * N)
 for i in range(N):
     x_initial = np.concatenate(
         (
@@ -296,45 +304,54 @@ optimal_variables = res["x"].full()
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
     (N + 1, state_dimension)
-)[:,0:8]
+)[:,0:12]
 
 optimal_controls = np.reshape(
     optimal_variables[(N + 1) * state_dimension:],
-    (N, 2))
+    (N, 3))
 
-optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
+optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
-print(ca.norm_2(optimal_trajectory[N,4:6]), orbital_vel)
+print(ca.norm_2(optimal_trajectory[N,6:9]), orbital_vel)
 
 terminal_sim = 1000
 
 for i in range(N, N+terminal_sim):
     optimal_trajectory = np.vstack([optimal_trajectory,
-                                    dynamics(optimal_trajectory[i,:], [0] * 2, h).full().flatten()])
-    optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
+                                    dynamics(optimal_trajectory[i,:], [0] * 3, h).full().flatten()])
+    optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
-fig, ax = plt.subplots()
+fig = plt.figure()
+ax = plt.axes(projection='3d')
 lines = []
 dots = []
 objects = []
 
 vrf = 50 / thrust_max # vector rescale factor
 
-vector = ax.annotate("", xy=(
-                             optimal_trajectory[0,0 * dimension],
-                             optimal_trajectory[0,0 * dimension + 1]
-                             ), xytext=(
-                                        optimal_trajectory[0,0 * dimension] + vrf * optimal_controls[0, 0] * cos(optimal_controls[0, 1]),
-                                        optimal_trajectory[0,0 * dimension + 1] + vrf * optimal_controls[0, 0] * sin(optimal_controls[0, 1])),
-                                        arrowprops={"facecolor": "red"})
+# vector = ax.annotate("", xy=(
+#                              optimal_trajectory[0,0 * dimension],
+#                              optimal_trajectory[0,0 * dimension + 1]
+#                              ), xytext=(
+#                                         optimal_trajectory[0,0 * dimension] + vrf * optimal_controls[0, 0] * cos(optimal_controls[0, 1]),
+#                                         optimal_trajectory[0,0 * dimension + 1] + vrf * optimal_controls[0, 0] * sin(optimal_controls[0, 1])),
+#                                         arrowprops={"facecolor": "red"})
 
-objects.append(vector)
+#objects.append(vector)
+
+#objects.append(0)
 
 for b_index in range(n_body):
-    line, = ax.plot(optimal_trajectory[:,b_index * dimension],
-                    optimal_trajectory[:,b_index * dimension + 1], '--', alpha=0.6)
-    dot, = ax.plot(optimal_trajectory[0,b_index * dimension],
-                    optimal_trajectory[0,b_index * dimension + 1], 'bo', alpha=1)
+    line, = ax.plot3D(optimal_trajectory[:,b_index * dimension],
+                      optimal_trajectory[:,b_index * dimension + 2],
+                      optimal_trajectory[:,b_index * dimension + 1],
+                      '--', alpha=0.6)
+
+    dot, = ax.plot3D(optimal_trajectory[0,b_index * dimension],
+                    optimal_trajectory[0,b_index * dimension + 2],
+                    optimal_trajectory[0,b_index * dimension + 1],
+                    'bo', alpha=1)
+
     dots.append(dot)
     lines.append(line)
     objects.append(line)
@@ -343,35 +360,38 @@ for b_index in range(n_body):
 def update(num, optimal_trajectory, objects):
     # print(cost_function_continous(num, optimal_trajectory[num,:]))
 
-    objects[0].xy = (
-                     optimal_trajectory[num,0 * dimension] + vrf * optimal_controls[num, 0] * cos(optimal_controls[num, 1]),
-                     optimal_trajectory[num,0 * dimension + 1] + vrf * optimal_controls[num, 0] * sin(optimal_controls[num, 1])
-    )
-
-    objects[0].set_position(
-            (optimal_trajectory[num,0 * dimension],
-            optimal_trajectory[num,0 * dimension + 1])
-    )
+    # objects[0].xy = (
+    #                  optimal_trajectory[num,0 * dimension] + vrf * optimal_controls[num, 0] * cos(optimal_controls[num, 1]),
+    #                  optimal_trajectory[num,0 * dimension + 1] + vrf * optimal_controls[num, 0] * sin(optimal_controls[num, 1])
+    # )
+    #
+    # objects[0].set_position(
+    #         (optimal_trajectory[num,0 * dimension],
+    #         optimal_trajectory[num,0 * dimension + 1])
+    # )
 
     for b_index in range(n_body):
         sli = 0
         #sli = max(0, num - 30) # start line index
-        objects[1 + 2 * b_index].set_data(optimal_trajectory[sli:num,b_index * dimension],
-                                optimal_trajectory[sli:num,b_index * dimension + 1])
-        objects[1 + 2 * b_index + 1].set_data(optimal_trajectory[num,b_index * dimension],
-                                optimal_trajectory[num,b_index * dimension + 1])
+        objects[-1 + 1 + 2 * b_index].set_data(optimal_trajectory[sli:num,b_index * dimension],
+                                optimal_trajectory[sli:num,b_index * dimension + 2])
+        objects[-1 + 1 + 2 * b_index].set_3d_properties(optimal_trajectory[sli:num,b_index * dimension + 1])
+
+        objects[-1 + 1 + 2 * b_index + 1].set_data(optimal_trajectory[num,b_index * dimension],
+                                optimal_trajectory[num,b_index * dimension + 2])
+        objects[-1 + 1 + 2 * b_index + 1].set_3d_properties(optimal_trajectory[num,b_index * dimension + 1])
     return objects
 
 ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
                           interval=N // 5, blit=True, frames=optimal_trajectory.shape[0])
 
-circle = plt.Circle((0,0), 190, fill=False, alpha=0.03)
-ax.add_patch(circle)
+# circle = plt.Circle((0,0), 190, fill=False, alpha=0.03)
+# ax.add_patch(circle)
+#
+# circle = plt.Circle((0,0), 100, fill=True)
+# ax.add_patch(circle)
 
-circle = plt.Circle((0,0), 100, fill=True)
-ax.add_patch(circle)
-
-ax.set_aspect('equal', adjustable='box')
+ax.set_aspect('auto', adjustable='box')
 
 import networkx as nx
 from matplotlib.animation import FuncAnimation, PillowWriter

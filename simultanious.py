@@ -105,7 +105,7 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
 
 def ode(z, controls):
-    return ode_general(z, controls, body_masses, dimension, n_body)
+    return ode_general(z, controls, body_masses, n_body, dimension)
 
 
 state_dimension = 2 * n_body * dimension
