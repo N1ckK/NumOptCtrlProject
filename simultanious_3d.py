@@ -477,10 +477,15 @@ ax.set_zlim((-8, 8))
 import networkx as nx
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-#plt.show()
-import PIL
-ani.save('swing_by_3d.gif', writer='imagemagick', fps=120)
+plt.show()
 
+# import PIL
+# ani.save('swing_by_3d.gif', writer='imagemagick', fps=120)
+
+
+
+import pickle
+pickle.dump(optimal_variables, open('Optimal controls.pickle', 'wb'))
 
 # TODO: (Nick)
 # n-body problem beschreiben (Herleitung)

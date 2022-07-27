@@ -280,16 +280,19 @@ initial_guess = np.concatenate((x_initial,u_initial)).tolist()
 
 #import pdb; pdb.set_trace()
 
-# Solve the NLP
-res = solver(
-    x0 = initial_guess,    # solution guess
-    lbx = -ca.inf,          # lower bound on x
-    ubx = ca.inf,           # upper bound on x
-    lbg = lbg,                # lower bound on g
-    ubg = ubg,                # upper bound on g
-)
+# # Solve the NLP
+# res = solver(
+#     x0 = initial_guess,    # solution guess
+#     lbx = -ca.inf,          # lower bound on x
+#     ubx = ca.inf,           # upper bound on x
+#     lbg = lbg,                # lower bound on g
+#     ubg = ubg,                # upper bound on g
+# )
+#
+# optimal_variables = res["x"].full()
 
-optimal_variables = res["x"].full()
+import pickle
+optimal_variables = pickle.load(open('Optimal_controls_2d.pickle', 'rb'))
 
 # print(optimal_variables[(N + 1) * state_dimension+1:])
 
@@ -376,13 +379,9 @@ ax.set_aspect('equal', adjustable='box')
 import networkx as nx
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-#plt.show()
+plt.show()
 #import PIL
 #ani.save('swing_by_2.gif', writer='imagemagick', fps=120)
-
-import pickle
-pickle.dump(optimal_variables, open('Optimal_controls_2d.pickle', 'wb'))
-
 
 # TODO: (Nick)
 # n-body problem beschreiben (Herleitung)
