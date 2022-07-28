@@ -19,13 +19,14 @@ grav_const = 0.00006
 # masses of the simulated bodies (rocket, planet)
 sun_mass = 10000000
 rocket_mass = 0.05
+# rocket is always body_0, planet is always body_-1
 body_masses = (rocket_mass, sun_mass)
-# number of bodies
-n_body = 2
+# number of bodies in orbit
+n_body = 1
 # dimension to simulate in
 dimension = 3
 # maximum thrust of the rocket
-thrust_max = 0.0001
+thrust_max = 0.01
 
 # initial positions and velocites of bodies:
 
@@ -38,8 +39,6 @@ rr = sqrt(0.3 ** 2 + 3 ** 2)
 surface = 100
 
 x_0_bar = [surface, 0, 0,
-           0, 0, 0,
-           0, 0, 0,
            0, 0, 0]
 
 # desired circular orbit height
@@ -69,8 +68,6 @@ rot_matrix_z = np.array([[ca.cos(theta_z), -ca.sin(theta_z), 0],
 
 Q = rot_matrix_x @ rot_matrix_y @ rot_matrix_z
 
-# just some rescale factor coming from the cost function that was chosen
-
 
 def rk4step_u(ode, h, x, u):
     """ one step of explicit Runge-Kutta scheme of order four (RK4)
@@ -97,10 +94,10 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
         where u are controls (alpha, theta, r) for body_1 ie.
         (alpha, theta) specifies the rocket direction and r the thrust.
     '''
-    N = 2 * dimension * n_body
     rhs_velocity = []
     rhs_acceleration = []
 
+    # iterate on all movable bodies around the planet
     for i in range(0, n_body):
 
         body_velocity_i = z[n_body * dimension + (i * dimension):
@@ -110,7 +107,9 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
         rhs_acceleration_i = 0
 
+        # calculate the force of body_j on body_i
         for j in range(0, n_body):
+            # no force of a body on itself
             if i == j:
                 continue
 
@@ -121,6 +120,15 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
                              / (ca.norm_2(body_position_i - body_position_j) ** 3)
                              * (body_position_j - body_position_i))
 
+        # calculate the force of the planet on body_i
+        body_position_i = z[(i * dimension): ((i + 1) * dimension)]
+        planet_position = [0] * dimension
+
+        rhs_acceleration_i += (grav_const * body_masses[-1]
+                             / (ca.norm_2(body_position_i - planet_position) ** 3)
+                             * (planet_position - body_position_i))
+
+        # body_0 is the actuated rocket
         if i == 0:
             r = controls[0]
             phi = controls[1]
@@ -240,16 +248,17 @@ for i in range(0, N):
         # x_k+1 - F(x_k, u_k)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
-            u[dimension*i:dimension*(i+1)],
+            u[dimension * i : dimension * (i+1)],
             h
         )
     )
     lbg += [0] * state_dimension
     ubg += [0] * state_dimension
 
-for i in range(0, N):  # ceil(50 / h), N):  # Don't apply these constraints to the time steps until t = 50
+# stay above surface and close to orbit
+for i in range(0, N):
     x_current = x[i * state_dimension : (i+1) * state_dimension]
-    constraints.append(ca.norm_2(x_current[0:dimension] - x_current[dimension:2*dimension]))
+    constraints.append(ca.norm_2(x_current[0:dimension]))
     lbg += [1.0 * surface]
     ubg += [1.3 * orbit]
 
@@ -269,15 +278,17 @@ x_terminal = x[N * state_dimension: (N+1) * state_dimension]
 #x_terminal_rocket = x_terminal[0:dimension]
 #x_terminal_rocket_rotated = ca.mtimes(Q, x_terminal_rocket)
 
+# reach orbital velocity
 constraints.append(
-    ca.norm_2(x_terminal[6:9]) - orbital_vel
+    ca.norm_2(x_terminal[n_body * dimension : (n_body + 1) * dimension]) - orbital_vel
 )
 
 lbg += [0]
 ubg += [0]
 
+# velocity perpendicular to orbit normal
 constraints.append(
-    ca.dot(x_terminal[6:9], x_terminal[0:3] - x_terminal[3:6])
+    ca.dot(x_terminal[n_body * dimension : (n_body + 1) * dimension], x_terminal[0:dimension])
 )
 
 lbg += [0]
@@ -287,8 +298,9 @@ ubg += [0]
 
 orbit_normal = ca.mtimes(Q.T, [0, 1, 0])
 
+# velocity is perpendicular to orbit binormal
 constraints.append(
-    ca.dot(x_terminal[6:9], orbit_normal)
+    ca.dot(x_terminal[n_body * dimension : (n_body + 1) * dimension], orbit_normal)
 )
 
 lbg += [0]
@@ -313,17 +325,17 @@ ubg += [0]
 
 #---
 
-
+# rocket is on the orbit
 constraints.append(
-            ca.mtimes(Q, x_terminal[0:3])[1]
+            ca.mtimes(Q, x_terminal[0:dimension])[1]
 )
 
 lbg += [0]
 ubg += [0]
 
-
+# rocket has correct distance to the planet
 constraints.append(
-    ca.norm_2(x_terminal[0:3] - x_terminal[3:6]) - orbit
+    ca.norm_2(x_terminal[0:dimension]) - orbit
 )
 
 lbg += [0]
@@ -340,9 +352,7 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 # build initial guess
 
 x_initial = [surface, 0, 0,
-           0, 0, 0,
-           rr * sin(pi/4) * cos(0.01), rr * sin(0.01) * sin(pi/4), rr * cos(pi/4),
-           0, 0, 0]
+             rr * sin(pi/4) * cos(0.01), rr * sin(0.01) * sin(pi/4), rr * cos(pi/4)]
 #u_initial = [rr, pi/3, 0] + [0] * (3 * N - 3)
 
 u_initial = [0] * (3 * N)
@@ -350,12 +360,12 @@ u_initial = [0] * (3 * N)
 for i in range(N):
     x_initial = np.concatenate(
         (
-            x_initial, dynamics(x_initial[i*state_dimension:(i + 1) * state_dimension],
-                                  u_initial[dimension*i:dimension*(i+1)], h).full().flatten()
+            x_initial, dynamics(x_initial[i * state_dimension : (i + 1) * state_dimension],
+                                  u_initial[dimension * i : dimension * (i + 1)], h).full().flatten()
         )
     )
 
-initial_guess = np.concatenate((x_initial,u_initial)).tolist()
+initial_guess = np.concatenate((x_initial, u_initial)).tolist()
 
 #import pdb; pdb.set_trace()
 
@@ -375,7 +385,7 @@ optimal_variables = res["x"].full()
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
     (N + 1, state_dimension)
-)[:,0:12]
+)[:,0:6]
 
 optimal_controls = np.reshape(
     optimal_variables[(N + 1) * state_dimension:],
@@ -386,7 +396,7 @@ optimal_controls = np.reshape(
 
 optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
-print(ca.norm_2(optimal_trajectory[N,6:9]), orbital_vel)
+print(ca.norm_2(optimal_trajectory[N,3:6]), orbital_vel)
 print(optimal_trajectory[N,:])
 
 print(optimal_controls[:10,:])
@@ -484,8 +494,8 @@ plt.show()
 
 
 
-import pickle
-pickle.dump(optimal_variables, open('Optimal controls.pickle', 'wb'))
+# import pickle
+# pickle.dump(optimal_variables, open('Optimal controls.pickle', 'wb'))
 
 # TODO: (Nick)
 # n-body problem beschreiben (Herleitung)

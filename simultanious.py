@@ -18,9 +18,10 @@ grav_const = 0.0008
 
 # masses of the simulated bodies (rocket, planet)
 sun_mass = 1000000
+# rocket is always body_0, planet is always body_-1
 body_masses = (0.05, sun_mass)
 # number of bodies
-n_body = 2
+n_body = 1
 # dimension to simulate in
 dimension = 2
 # maximum thrust of the rocket
@@ -36,8 +37,8 @@ rr = sqrt(0.3 ** 2 + 3 ** 2)
 # radius of the planet
 surface = 100
 
-x_0_bar = [surface, 0, 0, 0,
-           rr * cos(pi/3), rr * sin(pi/3), 0, 0]
+x_0_bar = [surface, 0,
+           rr * cos(pi/3), rr * sin(pi/3)]
 
 # desired circular orbit height
 orbit = 190
@@ -70,10 +71,10 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
         where u are controls (alpha, theta, r) for body_1 ie.
         (alpha, theta) specifies the rocket direction and r the thrust.
     '''
-    N = 2 * dimension * n_body
     rhs_velocity = []
     rhs_acceleration = []
 
+    # iterate on all movable bodies around the planet
     for i in range(0, n_body):
 
         body_velocity_i = z[n_body * dimension + (i * dimension):
@@ -83,30 +84,40 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
 
         rhs_acceleration_i = 0
 
+        # calculate the force of body_j on body_i
         for j in range(0, n_body):
+            # no force of a body on itself
             if i == j:
                 continue
 
             body_position_i = z[(i * dimension): ((i + 1) * dimension)]
             body_position_j = z[(j * dimension): ((j + 1) * dimension)]
+
             rhs_acceleration_i += (grav_const * body_masses[j]
                              / (ca.norm_2(body_position_i - body_position_j) ** 3)
                              * (body_position_j - body_position_i))
 
+        # calculate the force of the planet on body_i
+        body_position_i = z[(i * dimension): ((i + 1) * dimension)]
+        planet_position = [0] * dimension
+
+        rhs_acceleration_i += (grav_const * body_masses[-1]
+                             / (ca.norm_2(body_position_i - planet_position) ** 3)
+                             * (planet_position - body_position_i))
+
+        # body_0 is the actuated rocket
         if i == 0:
             r = controls[0]
-            theta = controls[1]
-            rhs_acceleration_i[0] += r * ca.cos(theta) / body_masses[i]
-            rhs_acceleration_i[1] += r * ca.sin(theta) / body_masses[i]
+            phi = controls[1]
+            rhs_acceleration_i[0] += r * ca.cos(phi) / body_masses[i]
+            rhs_acceleration_i[1] += r * ca.sin(phi) / body_masses[i]
 
         rhs_acceleration = ca.vertcat(rhs_acceleration, rhs_acceleration_i)
 
     return ca.vertcat(rhs_velocity, rhs_acceleration)
 
-
 def ode(z, controls):
     return ode_general(z, controls, body_masses, n_body, dimension)
-
 
 state_dimension = 2 * n_body * dimension
 
@@ -149,7 +160,7 @@ def cost_function_continous(t_current, x_current, u_current=None):
     # return t_current * (ca.exp(dist/orbit) / (dist/orbit)) / 30
     # dist_to_surface = sqrt((x_current[0]-x_current[2]) ** 2 + (x_current[1]-x_current[3]) ** 2) - surface
     # return exp(orbit/dist_to_surface) * exp(dist_to_surface/orbit)
-    return u_current[0]
+    return u_current[0] ** 2
 
 
 def euclidean_of_polar2(polar_vector_a, polar_vector_b):
@@ -178,8 +189,6 @@ def cost_function_integral_discrete(x, u):
                          # Each of the other non half step terms appears twice
                          + 2 * cost_function_continous((i + 1/2) * h, x_halfstep, u[dimension*i:dimension*(i+1)]))
                          # The remaining half steps
-        # cost += euclidean_of_polar2(u[2*(i-1):2*i], u[2*i:2*(i+1)]) / h
-        # Experimental, punish changes in controls
     return cost
 
 
@@ -208,22 +217,23 @@ for i in range(0, N):
         # x_k+1 - F(x_k, u_k)
         x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
             x[i * state_dimension : (i+1) * state_dimension],
-            u[2*i:2*i+2],
+            u[dimension * i : dimension * (i+1)],
             h
         )
     )
     lbg += [0] * state_dimension
     ubg += [0] * state_dimension
 
-for i in range(0, N):  # ceil(50 / h), N):  # Don't apply these constraints to the time steps until t = 50
+# stay above the surface
+for i in range(0, N):
     x_current = x[i * state_dimension : (i+1) * state_dimension]
-    constraints.append(ca.norm_2(x_current[0:2] - x_current[4:6]))
-    lbg += [1.1 * surface]
+    constraints.append(ca.norm_2(x_current[0:dimension]))
+    lbg += [surface]
     ubg += [ca.inf]
 
 # thrust_max <= u_k1 = r_k <= thrust_max
 constraints.append(u[::dimension])
-lbg += [0] * N
+lbg += [-thrust_max] * N
 ubg += [thrust_max] * N
 
 # -pi <= u_k2 = theta_k <= pi
@@ -232,24 +242,27 @@ ubg += [thrust_max] * N
 # ubg += [pi] * N
 
 # Terminal constraints
-x_terminal = x[N * state_dimension: (N+1) * state_dimension]
+x_terminal = x[N * state_dimension : (N+1) * state_dimension]
 
+# reach orbital velocity
 constraints.append(
-    ca.norm_2(x_terminal[4:6]) - orbital_vel
+    ca.norm_2(x_terminal[n_body * dimension : (n_body + 1) * dimension]) - orbital_vel
 )
 
 lbg += [0]
 ubg += [0]
 
+# velocity is perpendicular to orbit normal
 constraints.append(
-    ca.dot(x_terminal[4:6], x_terminal[0:2] - x_terminal[2:4])
+    ca.dot(x_terminal[n_body * dimension : (n_body + 1) * dimension], x_terminal[0:dimension])
 )
 
 lbg += [0]
 ubg += [0]
 
+# rocket has correct distance to the planet
 constraints.append(
-    ca.norm_2(x_terminal[0:2] - x_terminal[2:4]) - orbit
+    ca.norm_2(x_terminal[0:dimension]) - orbit
 )
 
 lbg += [0]
@@ -296,7 +309,7 @@ optimal_variables = res["x"].full()
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
     (N + 1, state_dimension)
-)[:,0:8]
+)[:,0:4]
 
 optimal_controls = np.reshape(
     optimal_variables[(N + 1) * state_dimension:],
@@ -304,7 +317,7 @@ optimal_controls = np.reshape(
 
 optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
 
-print(ca.norm_2(optimal_trajectory[N,4:6]), orbital_vel)
+print(ca.norm_2(optimal_trajectory[N,n_body * dimension : (n_body + 1) * dimension]), orbital_vel)
 
 terminal_sim = 1000
 
@@ -376,12 +389,12 @@ ax.set_aspect('equal', adjustable='box')
 import networkx as nx
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-#plt.show()
+plt.show()
 #import PIL
 #ani.save('swing_by_2.gif', writer='imagemagick', fps=120)
 
-import pickle
-pickle.dump(optimal_variables, open('Optimal_controls_2d.pickle', 'wb'))
+# import pickle
+# pickle.dump(optimal_variables, open('Optimal_controls_2d.pickle', 'wb'))
 
 
 # TODO: (Nick)
