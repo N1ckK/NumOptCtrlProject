@@ -431,8 +431,4 @@ ani2 = animation.FuncAnimation(fig2, update_polar,
                                interval=N // 5, blit=True,
                                frames=optimal_trajectory.shape[0])
 
-import PIL
-ani.save('orbit2d_ani_and_thrust.gif', writer='imagemagick', fps=60)
-ani2.save('orbit2d_polar.gif', writer='imagemagick', fps=60)
-
 plt.show()
