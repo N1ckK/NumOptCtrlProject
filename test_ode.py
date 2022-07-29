@@ -3,10 +3,9 @@ import casadi as ca
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from ode import *
-
 from math import *
 
+from ode import *
 
 def test_ode_2b_2d():
     '''
