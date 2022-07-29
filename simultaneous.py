@@ -212,16 +212,19 @@ constraints.append(u[::dimension])
 lbg += [0] * N
 ubg += [thrust_max] * N
 
+# constant: limit change of thrust
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i+1) * dimension] - u[i * dimension]))
     lbg += [0]
     ubg += [thrust_max / 20]
 
 
+# constraint: limit maximum angle
 constraints.append(u[1::dimension])
 lbg += [-2 * pi] * N
 ubg += [2 * pi] * N
 
+# contraint: limit change of angle
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i + 1) * dimension + 1]
                                - u[i * dimension + 1]))
@@ -322,14 +325,15 @@ for i in range(N, N+terminal_sim):
                                              [0] * 2, h).full().flatten()])
     optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
 
-
-fig2 = plt.figure()
-axp = fig2.add_subplot(polar=True)
+# create a visual plot:
 
 fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
 lines = []
 dots = []
 objects = []
+
+fig2 = plt.figure()
+axp = fig2.add_subplot(polar=True)
 
 # a rescale factor for the visual control vector in the plot
 vrf = 80 / thrust_max
