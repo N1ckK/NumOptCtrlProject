@@ -3,16 +3,16 @@ import casadi as ca
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from math import pi, floor, sin, cos, sqrt
+from math import pi, sin, cos, sqrt
 
 # Time horizon
 T = 700
 
-# Stepsize
-h = 2 ** (2)  # T / N
-
 # Number of discrete time points
-N = floor(T/h)  # 160
+N = 175
+
+# Stepsize
+h = T / (N - 1)
 
 # Gravitational constant
 grav_const = 0.0008
@@ -152,29 +152,34 @@ def cost_function_continous(t_current, x_current, u_current=None):
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized, using Simpson's rule.
+        be minimized, using Simpson's rule. Assumes that N is odd.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:state_dimension],
-                                            u[:dimension])
+    cost = h / 3 * (cost_function_continous(0, x[0: state_dimension],
+                                            u[0: dimension])
                     + cost_function_continous(T, x[-state_dimension:],
                                               u[-dimension:]))
     # First and last term in Simpson, both appear only once
-    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
-    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
+    cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
+                                                     2 * state_dimension],
+                                                u[dimension: 2 * dimension])
     # First half step of Simpson, not treated within the for-loop
-    for i in range(1, N):
-        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
-                              u[i*dimension:(i+1)*dimension], h / 2)
-        cost += h / 3 * (cost_function_continous(i * h,
-                                                 x[i*state_dimension:(i+1)
-                                                   * state_dimension],
-                                                 u[dimension*i:dimension
-                                                   * (i+1)])
-                         # Each of the other non half step terms appears twice
-                         + 2 * cost_function_continous((i + 1/2) * h,
-                                                       x_halfstep,
-                                                       u[dimension*i:
-                                                           dimension*(i+1)]))
+    for i in range(1, int((N - 1) / 2)):
+        cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
+                                                     x[2*i*state_dimension:
+                                                       (2*i+1) *
+                                                       state_dimension],
+                                                     u[2*i*dimension:
+                                                       (2*i+1)*dimension])
+                             # The other non half step terms appear twice
+                             + 2 * cost_function_continous((2 * i + 1) * h,
+                                                           x[(2*i+1) *
+                                                             state_dimension:
+                                                             (2*i+2) *
+                                                             state_dimension],
+                                                           u[(2*i+1)*dimension:
+                                                             (2*i+2)*dimension]
+                                                           )
+                             )
     return cost
 
 
