@@ -154,6 +154,11 @@ def cost_function_integral_discrete(x, u):
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule. Assumes that N is odd.
     '''
+    cost = 0
+    for i in range(N):
+        cost += h * u[dimension * i]
+    return cost
+
     cost = h / 3 * (cost_function_continous(0, x[0: state_dimension],
                                             u[0: dimension])
                     + cost_function_continous(T, x[-state_dimension:],
