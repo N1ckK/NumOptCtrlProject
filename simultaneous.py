@@ -159,34 +159,6 @@ def cost_function_integral_discrete(x, u):
         cost += h * u[dimension * i]
     return cost
 
-    # cost = h / 3 * (cost_function_continous(0, x[0: state_dimension],
-    #                                         u[0: dimension])
-    #                 + cost_function_continous(T, x[-state_dimension:],
-    #                                           u[-dimension:]))
-    # # First and last term in Simpson, both appear only once
-    # cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
-    #                                                  2 * state_dimension],
-    #                                             u[dimension: 2 * dimension])
-    # # First half step of Simpson, not treated within the for-loop
-    # for i in range(1, int((N - 1) / 2)):
-    #     cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
-    #                                                  x[2*i*state_dimension:
-    #                                                    (2*i+1) *
-    #                                                    state_dimension],
-    #                                                  u[2*i*dimension:
-    #                                                    (2*i+1)*dimension])
-    #                          # The other non half step terms appear twice
-    #                          + 2 * cost_function_continous((2 * i + 1) * h,
-    #                                                        x[(2*i+1) *
-    #                                                          state_dimension:
-    #                                                          (2*i+2) *
-    #                                                          state_dimension],
-    #                                                        u[(2*i+1)*dimension:
-    #                                                          (2*i+2)*dimension]
-    #                                                        )
-    #                          )
-    # return cost
-
 
 # build nlp
 constraints = []

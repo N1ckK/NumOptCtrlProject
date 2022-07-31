@@ -1,11 +1,9 @@
 import numpy as np
 import casadi as ca
-import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from ode import *
 
-from math import *
+from math import pi, sin, cos, sqrt
 
 # Time horizon
 T = 850
@@ -68,9 +66,9 @@ rot_matrix_x = np.array([[1, 0, 0],
                         [0, ca.cos(theta_x), -ca.sin(theta_x)],
                         [0, ca.sin(theta_x), ca.cos(theta_x)]])
 
-rot_matrix_y = np.array([[ca.cos(theta_y), 0 , ca.sin(theta_y)],
+rot_matrix_y = np.array([[ca.cos(theta_y), 0, ca.sin(theta_y)],
                          [0, 1, 0],
-                         [-ca.sin(theta_y), 0 , ca.cos(theta_y)]])
+                         [-ca.sin(theta_y), 0, ca.cos(theta_y)]])
 
 rot_matrix_z = np.array([[ca.cos(theta_z), -ca.sin(theta_z), 0],
                         [ca.sin(theta_z), ca.cos(theta_z), 0],
@@ -97,7 +95,7 @@ def rk4step_u(ode, h, x, u):
 
 
 def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
-        n_body: int, dimension: int) -> np.ndarray:
+                n_body: int, dimension: int) -> np.ndarray:
     '''
         The right hand side of
             z' = f(z, u)
@@ -112,7 +110,7 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
     for i in range(0, n_body):
 
         body_velocity_i = z[n_body * dimension + (i * dimension):
-            n_body * dimension + ((i + 1) * dimension)]
+                            n_body * dimension + ((i + 1) * dimension)]
 
         rhs_velocity = ca.vertcat(rhs_velocity, body_velocity_i)
 
@@ -128,18 +126,18 @@ def ode_general(z: np.ndarray, controls: np.ndarray, body_masses: tuple,
             body_position_j = z[(j * dimension): ((j + 1) * dimension)]
 
             rhs_acceleration_i += (grav_const * body_masses[j]
-                             / (ca.norm_2(body_position_i
-                                          - body_position_j) ** 3)
-                             * (body_position_j - body_position_i))
+                                   / (ca.norm_2(body_position_i
+                                                - body_position_j) ** 3)
+                                   * (body_position_j - body_position_i))
 
         # calculate the force of the planet on body_i
         body_position_i = z[(i * dimension): ((i + 1) * dimension)]
         planet_position = [0] * dimension
 
         rhs_acceleration_i += (grav_const * body_masses[-1]
-                             / (ca.norm_2(body_position_i
-                                          - planet_position) ** 3)
-                             * (planet_position - body_position_i))
+                               / (ca.norm_2(body_position_i
+                                            - planet_position) ** 3)
+                               * (planet_position - body_position_i))
 
         # body_0 is the actuated rocket
         if i == 0:
@@ -195,36 +193,8 @@ def cost_function_integral_discrete(x, u):
         cost += h * u[dimension * i]
     return cost
 
-    cost = h / 3 * (cost_function_continous(0, x[0 : state_dimension],
-                                            u[0 :dimension])
-                    + cost_function_continous(T, x[-state_dimension:],
-                                              u[-dimension:]))
-    # First and last term in Simpson, both appear only once
-    cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
-                                                     2 * state_dimension],
-                                                u[dimension : 2 * dimension])
-    # First half step of Simpson, not treated within the for-loop
-    for i in range(1, int((N - 1) / 2)):
-        cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
-                                                     x[2*i*state_dimension:
-                                                       (2*i+1)*
-                                                       state_dimension],
-                                                     u[2*i*dimension:
-                                                       (2*i+1)*dimension])
-    # Each of the other non half step terms appears twice
-                             + 2 * cost_function_continous((2 * i + 1) * h,
-                                                           x[(2*i+1)*
-                                                             state_dimension:
-                                                             (2*i+2)*
-                                                             state_dimension],
-                                                           u[(2*i+1)*dimension:
-                                                             (2*i+2)*dimension]
-                                                           )
-                             )
-    return cost
 
 # build nlp
-
 constraints = []
 lbg = []
 ubg = []
@@ -237,9 +207,9 @@ ubg += [0] * state_dimension
 for i in range(0, N):
     constraints.append(
         # x_k+1 - F(x_k, u_k)
-        x[(i+1) * state_dimension : (i+2) * state_dimension] - dynamics(
-            x[i * state_dimension : (i+1) * state_dimension],
-            u[dimension * i : dimension * (i+1)],
+        x[(i+1) * state_dimension:(i+2) * state_dimension] - dynamics(
+            x[i * state_dimension:(i+1) * state_dimension],
+            u[dimension * i:dimension * (i+1)],
             h
         )
     )
@@ -248,7 +218,7 @@ for i in range(0, N):
 
 # stay above surface and close to orbit
 for i in range(0, N):
-    x_current = x[i * state_dimension : (i+1) * state_dimension]
+    x_current = x[i * state_dimension:(i+1) * state_dimension]
     constraints.append(ca.norm_2(x_current[0:dimension]))
     lbg += [1.1 * surface]
     ubg += [ca.inf]
@@ -264,11 +234,6 @@ for i in range(N-1):
     lbg += [0]
     ubg += [h * thrust_max / 60]
 
-# -pi <= u_k2 = theta_k <= pi
-# constraints.append(u[1::dimension])
-# lbg += [-pi] * N
-# ubg += [pi] * N
-
 # contraint: limit change of angle
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i + 1) * dimension + 1]
@@ -283,20 +248,14 @@ for i in range(N-1):
     lbg += [0]
     ubg += [h * pi / 48]
 
-# # last control must be zero
-# constraints.append(u[-dimension])
-# lbg += [0]
-# ubg += [0]
 
 # Terminal constraints
 x_terminal = x[N * state_dimension: (N+1) * state_dimension]
 
-#x_terminal_rocket = x_terminal[0:dimension]
-#x_terminal_rocket_rotated = ca.mtimes(Q, x_terminal_rocket)
 
 # reach orbital velocity
 constraints.append(
-    ca.norm_2(x_terminal[n_body * dimension : (n_body + 1)
+    ca.norm_2(x_terminal[n_body * dimension:(n_body + 1)
                          * dimension]) - orbital_vel
 )
 
@@ -305,20 +264,18 @@ ubg += [0]
 
 # velocity perpendicular to orbit normal
 constraints.append(
-    ca.dot(x_terminal[n_body * dimension : (n_body + 1)
+    ca.dot(x_terminal[n_body * dimension:(n_body + 1)
                       * dimension], x_terminal[0:dimension])
 )
 
 lbg += [0]
 ubg += [0]
 
-#---
-
 orbit_normal = ca.mtimes(Q.T, [0, 1, 0])
 
 # velocity is perpendicular to orbit binormal
 constraints.append(
-    ca.dot(x_terminal[n_body * dimension : (n_body + 1)
+    ca.dot(x_terminal[n_body * dimension:(n_body + 1)
                       * dimension], orbit_normal)
 )
 
@@ -327,13 +284,9 @@ ubg += [0]
 
 
 # rocket is on the orbit
-# constraints.append(
-#             ca.mtimes(Q, x_terminal[0:dimension])[1]
-# )
-# this should be equivalent imo and maybe simpler computationally
 constraints.append(
     ca.dot(x_terminal[0:dimension], orbit_normal)
-    )
+)
 
 lbg += [0]
 ubg += [0]
@@ -371,38 +324,30 @@ u_initial = [0] * (dimension * N)
 for i in range(N):
     x_initial = np.concatenate(
         (
-            x_initial, dynamics(x_initial[i * state_dimension : (i + 1)
+            x_initial, dynamics(x_initial[i * state_dimension:(i + 1)
                                           * state_dimension],
-                                  u_initial[dimension * i : dimension *
-                                            (i + 1)], h).full().flatten()
+                                u_initial[dimension * i:dimension *
+                                          (i + 1)], h).full().flatten()
         )
     )
-
-# loads an initial guess for the trajectory without controls
-# import pickle
-# initial_trajectory_guess = pickle.load(open('initial_trajectory.pickle', 'rb'))
 
 initial_guess = np.concatenate((x_initial, u_initial)).tolist()
 
 # Solve the NLP
 res = solver(
-    x0 = initial_guess,    # solution guess
-    lbx = -ca.inf,          # lower bound on x
-    ubx = ca.inf,           # upper bound on x
-    lbg = lbg,                # lower bound on g
-    ubg = ubg,                # upper bound on g
+    x0=initial_guess,    # solution guess
+    lbx=-ca.inf,          # lower bound on x
+    ubx=ca.inf,           # upper bound on x
+    lbg=lbg,                # lower bound on g
+    ubg=ubg,                # upper bound on g
 )
 
 optimal_variables = res["x"].full()
 
-# import pickle
-# pickle.dump(optimal_variables[:(N + 1) * state_dimension].flatten(),
-#             open("initial_trajectory.pickle", "wb"))
-
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
     (N + 1, state_dimension)
-)[:,0:6]
+)[:, 0:6]
 
 optimal_controls = np.reshape(
     optimal_variables[(N + 1) * state_dimension:],
@@ -410,16 +355,11 @@ optimal_controls = np.reshape(
 
 optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
-print(ca.norm_2(optimal_trajectory[N,3:6]), orbital_vel)
-print(optimal_trajectory[N,:])
-
-print(optimal_controls[:10,:])
-
 terminal_sim = 500
 
 for i in range(N, N+terminal_sim):
     optimal_trajectory = np.vstack([optimal_trajectory,
-                                    dynamics(optimal_trajectory[i,:],
+                                    dynamics(optimal_trajectory[i, :],
                                              [0] * 3, h).full().flatten()])
     optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
@@ -438,30 +378,41 @@ objects = []
 
 
 for b_index in range(n_body):
-    line, = ax.plot3D(optimal_trajectory[:,b_index * dimension],
-                      optimal_trajectory[:,b_index * dimension + 2],
-                      optimal_trajectory[:,b_index * dimension + 1],
+    line, = ax.plot3D(optimal_trajectory[:, b_index * dimension],
+                      optimal_trajectory[:, b_index * dimension + 2],
+                      optimal_trajectory[:, b_index * dimension + 1],
                       '--', alpha=0.6)
 
-    dot, = ax.plot3D(optimal_trajectory[0,b_index * dimension],
-                    optimal_trajectory[0,b_index * dimension + 2],
-                    optimal_trajectory[0,b_index * dimension + 1],
-                    'bo', alpha=1)
+    dot, = ax.plot3D(optimal_trajectory[0, b_index * dimension],
+                     optimal_trajectory[0, b_index * dimension + 2],
+                     optimal_trajectory[0, b_index * dimension + 1],
+                     'bo', alpha=1)
 
     dots.append(dot)
     lines.append(line)
     objects.append(line)
     objects.append(dot)
 
+
 def update(num, optimal_trajectory, objects):
     for b_index in range(n_body):
-        objects[2 * b_index].set_data(optimal_trajectory[0:num,b_index * dimension],
-                                optimal_trajectory[0:num,b_index * dimension + 2])
-        objects[2 * b_index].set_3d_properties(optimal_trajectory[0:num,b_index * dimension + 1])
+        objects[2 * b_index].set_data(optimal_trajectory[0:num, b_index
+                                                         * dimension],
+                                      optimal_trajectory[0:num, b_index
+                                                         * dimension + 2])
+        objects[2 * b_index].set_3d_properties(optimal_trajectory[0:num,
+                                                                  b_index
+                                                                  * dimension
+                                                                  + 1])
 
-        objects[2 * b_index + 1].set_data(optimal_trajectory[num,b_index * dimension],
-                                optimal_trajectory[num,b_index * dimension + 2])
-        objects[2 * b_index + 1].set_3d_properties(optimal_trajectory[num,b_index * dimension + 1])
+        objects[2 * b_index + 1].set_data(optimal_trajectory[num, b_index
+                                                             * dimension],
+                                          optimal_trajectory[num, b_index
+                                                             * dimension + 2])
+        objects[2 * b_index
+                + 1].set_3d_properties(optimal_trajectory[num,
+                                                          b_index
+                                                          * dimension + 1])
     return objects
 
 
@@ -471,38 +422,34 @@ y = surface * np.sin(u)*np.sin(v)
 z = surface * np.cos(v)
 ax.plot_wireframe(x, y, z, color="r")
 
+ax.set_title("Animated Trajectory")
+
 ax.set_xlim((-200, 200))
 ax.set_ylim((-200, 200))
 ax.set_zlim((-200, 200))
 
 optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
 ax2.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
-           ca.fabs(optimal_control_vector[::3])/thrust_max, "--x")
+         ca.fabs(optimal_control_vector[::3])/thrust_max, "--x")
 ax2.set_ylim([0, 1.1])
 ax2.plot([0, T], [1, 1], "--", color="black")
 ax2.set_title("Thrust over time")
 ax2.set_xlabel("N")
 ax2.set_ylabel(r"$r(t) / t_{max}$")
 
-phi_line = ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
-                       optimal_control_vector[1::3], "-")
-theta_line = ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
-                       optimal_control_vector[2::3], "-")
+phi_line = ax3.plot(np.linspace(0, T,
+                                num=optimal_control_vector.shape[0] // 3),
+                    optimal_control_vector[1::3], "-")
+theta_line = ax3.plot(np.linspace(0, T,
+                                  num=optimal_control_vector.shape[0] // 3),
+                      optimal_control_vector[2::3], "-")
 ax3.set_title("Animation of the control vector")
-
-
-#ax.set_aspect('auto', adjustable='box')
+ax3.set_xlabel("N")
+ax3.set_ylabel("radiants")
 
 
 ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
-                          interval=N // 5, blit=True,
-                          frames=optimal_trajectory.shape[0])
-
-
-import networkx as nx
-from matplotlib.animation import FuncAnimation, PillowWriter
+                              interval=N // 5, blit=True,
+                              frames=optimal_trajectory.shape[0])
 
 plt.show()
-
-# import PIL
-# ani.save('orbit3d_ani.gif', writer='imagemagick', fps=60)
