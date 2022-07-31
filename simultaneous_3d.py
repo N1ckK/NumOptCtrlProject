@@ -10,11 +10,11 @@ from math import *
 # Time horizon
 T = 750
 
-# Stepsize
-h = 2 ** (3) # T / N
-
 # Number of discrete time points
-N = floor(T/h)  # 160
+N = 99
+
+# Stepsize
+h = T / (N - 1)
 
 # Gravitational constant
 grav_const = 0.00006
@@ -39,7 +39,8 @@ thrust_max = 0.01
 surface = 100
 
 # initial position and velocity of orbiting body:
-x_0_bar = [surface, 0, 0, 0, 0, 0]
+x_0_bar = [surface * cos(pi/8) * sin(pi/3), surface * sin(pi/8) * sin(pi/3), surface * cos(pi/3),
+           0, 0, 0]
 
 # desired circular orbit height
 orbit = 190
@@ -168,36 +169,43 @@ u = ca.SX.sym('u', N * dimension)
 orbital_vel = sqrt(sun_mass * grav_const / orbit)
 
 
-def cost_function_continous(t_current, x_current, u_current=None):
+def cost_function_continous(t_current, x_current, u_current):
     return u_current[0] ** 2
 
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized, using Simpson's rule.
+        be minimized, using Simpson's rule. Assumes that N is odd.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:state_dimension],
-                                            u[:dimension])
+    cost = h / 3 * (cost_function_continous(0, x[0 : state_dimension],
+                                            u[0 :dimension])
                     + cost_function_continous(T, x[-state_dimension:],
                                               u[-dimension:]))
     # First and last term in Simpson, both appear only once
-    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
-    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
+    cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
+                                                     2 * state_dimension],
+                                                u[dimension : 2 * dimension])
     # First half step of Simpson, not treated within the for-loop
-    for i in range(1, N):
-        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
-                              u[i*dimension:(i+1)*dimension], h / 2)
-        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
-            (i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
-                         # Each of the other non half step terms appears twice
-                         + 2 * cost_function_continous((i + 1/2) * h,
-                                                       x_halfstep,
-                                                       u[dimension*i:
-                                                           dimension*(i+1)]))
+    for i in range(1, int((N - 1) / 2)):
+        cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
+                                                     x[2*i*state_dimension:
+                                                       (2*i+1)*
+                                                       state_dimension],
+                                                     u[2*i*dimension:
+                                                       (2*i+1)*dimension])
+    # Each of the other non half step terms appears twice
+                             + 2 * cost_function_continous((2 * i + 1) * h,
+                                                           x[(2*i+1)*
+                                                             state_dimension:
+                                                             (2*i+2)*
+                                                             state_dimension],
+                                                           u[(2*i+1)*dimension:
+                                                             (2*i+2)*dimension]
+                                                           )
+                             )
     return cost
-
-
+                         
 # build nlp
 
 constraints = []
@@ -277,9 +285,13 @@ ubg += [0]
 
 
 # rocket is on the orbit
+# constraints.append(
+#             ca.mtimes(Q, x_terminal[0:dimension])[1]
+# )
+# this should be equivalent imo and maybe simpler computationally
 constraints.append(
-            ca.mtimes(Q, x_terminal[0:dimension])[1]
-)
+    ca.dot(x_terminal[0:dimension], orbit_normal)
+    )
 
 lbg += [0]
 ubg += [0]
@@ -306,10 +318,10 @@ v_inital = sqrt(0.3 ** 2 + 3 ** 2)
 
 x_initial = [surface, 0, 0,
              v_inital * sin(pi/4) * cos(0.01),
-             v_inital * sin(0.01) * sin(pi/4),
+             v_inital * sin(pi/4) * sin(0.01),
              v_inital * cos(pi/4)]
 
-u_initial = [0] * (3 * N)
+u_initial = [0] * (dimension * N)
 
 for i in range(N):
     x_initial = np.concatenate(
@@ -406,7 +418,7 @@ ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
 
 ax.set_xlim((-200, 200))
 ax.set_ylim((-200, 200))
-ax.set_zlim((-8, 8))
+ax.set_zlim((-60, 60))
 
 #ax.set_aspect('auto', adjustable='box')
 
