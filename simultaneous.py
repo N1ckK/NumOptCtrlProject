@@ -30,13 +30,13 @@ n_body = 1
 dimension = 2
 
 # maximum thrust of the rocket
-thrust_max = 0.0003
+thrust_max = 0.0003 # 0.0009
 
 # radius of the planet
 surface = 100
 
 # initial position and velocite of orbiting body:
-v_initial = 2.412
+v_initial = 2.412 # * 0.8
 
 x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
 
