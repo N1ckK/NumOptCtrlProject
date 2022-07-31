@@ -33,20 +33,24 @@ n_body = 1
 dimension = 3
 
 # maximum thrust of the rocket
-thrust_max = 0.01
+thrust_max = 0.0015
 
 # radius of the planet
 surface = 100
 
+v_initial = 2.412 * 0.27
+#
+# x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
+
 # initial position and velocity of orbiting body:
-x_0_bar = [surface * cos(pi/8) * sin(pi/3), surface * sin(pi/8) * sin(pi/3), surface * cos(pi/3),
-           0, 0, 0]
+x_0_bar = [1.1 * surface * cos(pi/8) * sin(pi/4), 1.1 * surface * sin(pi/8) * sin(pi/4), 1.1 * surface * cos(pi/4),
+           v_initial * cos(pi/6) * sin(pi/4), v_initial * sin(pi/6) * sin(pi/4), v_initial * cos(pi/4)]
 
 # desired circular orbit height
 orbit = 190
 
 # orbit rotation angles
-theta_x = 0.01
+theta_x = 0.3
 theta_y = 0
 theta_z = 0
 
@@ -170,7 +174,7 @@ orbital_vel = sqrt(sun_mass * grav_const / orbit)
 
 
 def cost_function_continous(t_current, x_current, u_current):
-    return u_current[0] ** 2
+    return u_current[0]
 
 
 def cost_function_integral_discrete(x, u):
@@ -178,6 +182,11 @@ def cost_function_integral_discrete(x, u):
         Computes the discretized cost of given state and control variables to
         be minimized, using Simpson's rule. Assumes that N is odd.
     '''
+    cost = 0
+    for i in range(N):
+        cost += h * u[dimension * i]
+    return cost
+
     cost = h / 3 * (cost_function_continous(0, x[0 : state_dimension],
                                             u[0 :dimension])
                     + cost_function_continous(T, x[-state_dimension:],
@@ -205,7 +214,7 @@ def cost_function_integral_discrete(x, u):
                                                            )
                              )
     return cost
-                         
+
 # build nlp
 
 constraints = []
@@ -234,17 +243,37 @@ for i in range(0, N):
     x_current = x[i * state_dimension : (i+1) * state_dimension]
     constraints.append(ca.norm_2(x_current[0:dimension]))
     lbg += [1.0 * surface]
-    ubg += [1.3 * orbit]
+    ubg += [ca.inf]
 
 # thrust_max <= u_k1 = r_k <= thrust_max
 constraints.append(u[::dimension])
-lbg += [-thrust_max] * N
+lbg += [0] * N
 ubg += [thrust_max] * N
+
+# constant: limit change of thrust
+for i in range(N-1):
+    constraints.append(ca.fabs(u[(i+1) * dimension] - u[i * dimension]))
+    lbg += [0]
+    ubg += [h * thrust_max / 60]
 
 # -pi <= u_k2 = theta_k <= pi
 # constraints.append(u[1::dimension])
 # lbg += [-pi] * N
 # ubg += [pi] * N
+
+# contraint: limit change of angle
+for i in range(N-1):
+    constraints.append(ca.fabs(u[(i + 1) * dimension + 1]
+                               - u[i * dimension + 1]))
+    lbg += [0]
+    ubg += [h * pi / 48]
+
+# contraint: limit change of angle
+for i in range(N-1):
+    constraints.append(ca.fabs(u[(i + 1) * dimension + 2]
+                               - u[i * dimension + 2]))
+    lbg += [0]
+    ubg += [h * pi / 48]
 
 # Terminal constraints
 x_terminal = x[N * state_dimension: (N+1) * state_dimension]
@@ -333,7 +362,10 @@ for i in range(N):
         )
     )
 
-initial_guess = np.concatenate((x_initial, u_initial)).tolist()
+import pickle
+initial_guess = pickle.load(open('initial_state.pickle', 'rb'))
+
+#initial_guess = np.concatenate((x_initial, u_initial)).tolist()
 
 #import pdb; pdb.set_trace()
 
@@ -347,6 +379,9 @@ res = solver(
 )
 
 optimal_variables = res["x"].full()
+
+# import pickle
+# pickle.dump(optimal_variables, open("initial_state.pickle", "wb"))
 
 # print(optimal_variables[(N + 1) * state_dimension+1:])
 
@@ -379,6 +414,13 @@ for i in range(N, N+terminal_sim):
 
 fig = plt.figure()
 ax = plt.axes(projection='3d')
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot()
+
+fig3 = plt.figure()
+ax3 = fig3.add_subplot()
+
 lines = []
 dots = []
 objects = []
@@ -411,16 +453,34 @@ def update(num, optimal_trajectory, objects):
         objects[2 * b_index + 1].set_3d_properties(optimal_trajectory[num,b_index * dimension + 1])
     return objects
 
-ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
-                          interval=N // 5, blit=True,
-                          frames=optimal_trajectory.shape[0])
-
 
 ax.set_xlim((-200, 200))
 ax.set_ylim((-200, 200))
 ax.set_zlim((-60, 60))
 
+optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
+ax2.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
+           ca.fabs(optimal_control_vector[::3])/thrust_max, "--x")
+ax2.set_ylim([0, 1.1])
+ax2.plot([0, T], [1, 1], "--", color="black")
+ax2.set_title("Thrust over time")
+ax2.set_xlabel("N")
+ax2.set_ylabel(r"$r(t) / t_{max}$")
+
+phi_line = ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
+                       optimal_control_vector[1::3], "-")
+theta_line = ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
+                       optimal_control_vector[2::3], "-")
+ax3.set_title("Animation of the control vector")
+
+
 #ax.set_aspect('auto', adjustable='box')
+
+
+ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
+                          interval=N // 5, blit=True,
+                          frames=optimal_trajectory.shape[0])
+
 
 import networkx as nx
 from matplotlib.animation import FuncAnimation, PillowWriter

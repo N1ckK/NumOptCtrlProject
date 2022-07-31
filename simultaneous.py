@@ -9,7 +9,7 @@ from math import pi, sin, cos, sqrt
 T = 700
 
 # Number of discrete time points
-N = 175
+N = 176
 
 # Stepsize
 h = T / (N - 1)
@@ -30,13 +30,13 @@ n_body = 1
 dimension = 2
 
 # maximum thrust of the rocket
-thrust_max = 0.0003 # 0.0009
+thrust_max = 0.0003  # 0.0009
 
 # radius of the planet
 surface = 100
 
 # initial position and velocite of orbiting body:
-v_initial = 2.412 # * 0.8
+v_initial = 2.412  # * 0.8
 
 x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
 
@@ -159,33 +159,33 @@ def cost_function_integral_discrete(x, u):
         cost += h * u[dimension * i]
     return cost
 
-    cost = h / 3 * (cost_function_continous(0, x[0: state_dimension],
-                                            u[0: dimension])
-                    + cost_function_continous(T, x[-state_dimension:],
-                                              u[-dimension:]))
-    # First and last term in Simpson, both appear only once
-    cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
-                                                     2 * state_dimension],
-                                                u[dimension: 2 * dimension])
-    # First half step of Simpson, not treated within the for-loop
-    for i in range(1, int((N - 1) / 2)):
-        cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
-                                                     x[2*i*state_dimension:
-                                                       (2*i+1) *
-                                                       state_dimension],
-                                                     u[2*i*dimension:
-                                                       (2*i+1)*dimension])
-                             # The other non half step terms appear twice
-                             + 2 * cost_function_continous((2 * i + 1) * h,
-                                                           x[(2*i+1) *
-                                                             state_dimension:
-                                                             (2*i+2) *
-                                                             state_dimension],
-                                                           u[(2*i+1)*dimension:
-                                                             (2*i+2)*dimension]
-                                                           )
-                             )
-    return cost
+    # cost = h / 3 * (cost_function_continous(0, x[0: state_dimension],
+    #                                         u[0: dimension])
+    #                 + cost_function_continous(T, x[-state_dimension:],
+    #                                           u[-dimension:]))
+    # # First and last term in Simpson, both appear only once
+    # cost += 2 * h / 3 * cost_function_continous(h, x[state_dimension:
+    #                                                  2 * state_dimension],
+    #                                             u[dimension: 2 * dimension])
+    # # First half step of Simpson, not treated within the for-loop
+    # for i in range(1, int((N - 1) / 2)):
+    #     cost += 2 * h / 3 * (cost_function_continous(2 * i * h,
+    #                                                  x[2*i*state_dimension:
+    #                                                    (2*i+1) *
+    #                                                    state_dimension],
+    #                                                  u[2*i*dimension:
+    #                                                    (2*i+1)*dimension])
+    #                          # The other non half step terms appear twice
+    #                          + 2 * cost_function_continous((2 * i + 1) * h,
+    #                                                        x[(2*i+1) *
+    #                                                          state_dimension:
+    #                                                          (2*i+2) *
+    #                                                          state_dimension],
+    #                                                        u[(2*i+1)*dimension:
+    #                                                          (2*i+2)*dimension]
+    #                                                        )
+    #                          )
+    # return cost
 
 
 # build nlp
@@ -226,20 +226,20 @@ ubg += [thrust_max] * N
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i+1) * dimension] - u[i * dimension]))
     lbg += [0]
-    ubg += [thrust_max / 20]
+    ubg += [h * thrust_max / 60]
 
 
-# constraint: limit maximum angle
-constraints.append(u[1::dimension])
-lbg += [-2 * pi] * N
-ubg += [2 * pi] * N
+# # constraint: limit maximum angle
+# constraints.append(u[1::dimension])
+# lbg += [-2 * pi] * N
+# ubg += [2 * pi] * N
 
 # contraint: limit change of angle
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i + 1) * dimension + 1]
                                - u[i * dimension + 1]))
     lbg += [0]
-    ubg += [pi / 12]
+    ubg += [h * pi / 48]
 
 # Terminal constraints:
 x_terminal = x[N * state_dimension:(N+1) * state_dimension]
