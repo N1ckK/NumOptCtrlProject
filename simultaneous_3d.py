@@ -8,7 +8,7 @@ from ode import *
 from math import *
 
 # Time horizon
-T = 750
+T = 850
 
 # Number of discrete time points
 N = 99
@@ -17,10 +17,10 @@ N = 99
 h = T / (N - 1)
 
 # Gravitational constant
-grav_const = 0.00006
+grav_const = 0.0008
 
 # masses of the simulated bodies (rocket, planet)
-sun_mass = 10000000
+sun_mass = 1000000
 rocket_mass = 0.05
 
 # rocket is always body_0, planet is always body_-1
@@ -33,26 +33,34 @@ n_body = 1
 dimension = 3
 
 # maximum thrust of the rocket
-thrust_max = 0.0015
+thrust_max = 0.0004
 
 # radius of the planet
 surface = 100
 
-v_initial = 2.412 * 0.27
-#
-# x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
+v_initial = 2.412
 
 # initial position and velocity of orbiting body:
-x_0_bar = [1.1 * surface * cos(pi/8) * sin(pi/4), 1.1 * surface * sin(pi/8) * sin(pi/4), 1.1 * surface * cos(pi/4),
-           v_initial * cos(pi/6) * sin(pi/4), v_initial * sin(pi/6) * sin(pi/4), v_initial * cos(pi/4)]
+phi_0_bar = 0   # horizontal rotation
+theta_0_bar = pi / 2  # vertical rotation
+
+phi_v_0_bar = pi / 8  # horizontal rotation
+theta_v_0_bar = pi / 2.1  # vertical rotation
+
+x_0_bar = [1.1 * surface * cos(phi_0_bar) * sin(theta_0_bar),
+           1.1 * surface * cos(theta_0_bar),
+           1.1 * surface * sin(phi_0_bar) * sin(theta_0_bar),
+           v_initial * cos(phi_v_0_bar) * sin(theta_v_0_bar),
+           v_initial * cos(theta_v_0_bar),
+           v_initial * sin(phi_v_0_bar) * sin(theta_v_0_bar)]
 
 # desired circular orbit height
 orbit = 190
 
 # orbit rotation angles
 theta_x = 0.3
-theta_y = 0
-theta_z = 0
+theta_y = 0.2
+theta_z = -0.2
 
 
 # building the rotation matrix
@@ -242,7 +250,7 @@ for i in range(0, N):
 for i in range(0, N):
     x_current = x[i * state_dimension : (i+1) * state_dimension]
     constraints.append(ca.norm_2(x_current[0:dimension]))
-    lbg += [1.0 * surface]
+    lbg += [1.1 * surface]
     ubg += [ca.inf]
 
 # thrust_max <= u_k1 = r_k <= thrust_max
@@ -274,6 +282,11 @@ for i in range(N-1):
                                - u[i * dimension + 2]))
     lbg += [0]
     ubg += [h * pi / 48]
+
+# # last control must be zero
+# constraints.append(u[-dimension])
+# lbg += [0]
+# ubg += [0]
 
 # Terminal constraints
 x_terminal = x[N * state_dimension: (N+1) * state_dimension]
@@ -343,12 +356,15 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 
 # build initial guess
 
-v_inital = sqrt(0.3 ** 2 + 3 ** 2)
+v_initial = sqrt(0.3 ** 2 + 3 ** 2)
 
-x_initial = [surface, 0, 0,
-             v_inital * sin(pi/4) * cos(0.01),
-             v_inital * sin(pi/4) * sin(0.01),
-             v_inital * cos(pi/4)]
+
+x_initial = [1.1 * surface * cos(phi_0_bar) * sin(theta_0_bar),
+             1.1 * surface * cos(theta_0_bar),
+             1.1 * surface * sin(phi_0_bar) * sin(theta_0_bar),
+             v_initial * cos(pi / 4) * sin(theta_v_0_bar),
+             v_initial * cos(theta_v_0_bar),
+             v_initial * sin(pi / 4) * sin(theta_v_0_bar)]
 
 u_initial = [0] * (dimension * N)
 
@@ -362,12 +378,11 @@ for i in range(N):
         )
     )
 
-import pickle
-initial_guess = pickle.load(open('initial_state.pickle', 'rb'))
+# loads an initial guess for the trajectory without controls
+# import pickle
+# initial_trajectory_guess = pickle.load(open('initial_trajectory.pickle', 'rb'))
 
-#initial_guess = np.concatenate((x_initial, u_initial)).tolist()
-
-#import pdb; pdb.set_trace()
+initial_guess = np.concatenate((x_initial, u_initial)).tolist()
 
 # Solve the NLP
 res = solver(
@@ -381,9 +396,8 @@ res = solver(
 optimal_variables = res["x"].full()
 
 # import pickle
-# pickle.dump(optimal_variables, open("initial_state.pickle", "wb"))
-
-# print(optimal_variables[(N + 1) * state_dimension+1:])
+# pickle.dump(optimal_variables[:(N + 1) * state_dimension].flatten(),
+#             open("initial_trajectory.pickle", "wb"))
 
 optimal_trajectory = np.reshape(
     optimal_variables[:(N + 1) * state_dimension],
@@ -393,9 +407,6 @@ optimal_trajectory = np.reshape(
 optimal_controls = np.reshape(
     optimal_variables[(N + 1) * state_dimension:],
     (N, 3))
-
-#with open("initial.txt", "w") as as file:
-#    file.write(optimal_controls)
 
 optimal_controls = np.vstack([optimal_controls, np.array([0, 0, 0])])
 
@@ -454,9 +465,15 @@ def update(num, optimal_trajectory, objects):
     return objects
 
 
+u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+x = surface * np.cos(u)*np.sin(v)
+y = surface * np.sin(u)*np.sin(v)
+z = surface * np.cos(v)
+ax.plot_wireframe(x, y, z, color="r")
+
 ax.set_xlim((-200, 200))
 ax.set_ylim((-200, 200))
-ax.set_zlim((-60, 60))
+ax.set_zlim((-200, 200))
 
 optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
 ax2.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
@@ -488,4 +505,4 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 plt.show()
 
 # import PIL
-# ani.save('swing_by_3d.gif', writer='imagemagick', fps=120)
+# ani.save('orbit3d_ani.gif', writer='imagemagick', fps=60)
