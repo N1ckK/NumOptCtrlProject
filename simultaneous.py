@@ -152,11 +152,26 @@ def cost_function_continous(t_current, x_current, u_current=None):
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized, using Simpson's rule. Assumes that N is odd.
+        be minimized, using Simpson's rule.
     '''
-    cost = 0
-    for i in range(N):
-        cost += h * u[dimension * i]
+    cost = h / 6 * (cost_function_continous(0, x[:state_dimension],
+                                            u[:dimension])
+                    + cost_function_continous(T, x[-state_dimension:],
+                                              u[-dimension:]))
+    # First and last term in Simpson, both appear only once
+    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
+    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
+    # First half step of Simpson, not treated within the for-loop
+    for i in range(1, N):
+        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
+                              u[i*dimension:(i+1)*dimension], h / 2)
+        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
+            (i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
+                         # Each of the other non half step terms appears twice
+                         + 2 * cost_function_continous((i + 1/2) * h,
+                                                       x_halfstep,
+                                                       u[dimension*i:
+                                                           dimension*(i+1)]))
     return cost
 
 

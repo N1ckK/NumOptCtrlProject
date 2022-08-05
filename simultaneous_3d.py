@@ -40,7 +40,7 @@ v_initial = 2.412
 
 # initial position and velocity of orbiting body:
 phi_0_bar = 0   # horizontal rotation
-theta_0_bar = pi / 2  # vertical rotation
+theta_0_bar = pi / 2.35  # vertical rotation
 
 phi_v_0_bar = pi / 8  # horizontal rotation
 theta_v_0_bar = pi / 2.1  # vertical rotation
@@ -183,14 +183,40 @@ def cost_function_continous(t_current, x_current, u_current):
     return u_current[0]
 
 
+# def cost_function_integral_discrete(x, u):
+#     '''
+#         Computes the discretized cost of given state and control variables to
+#         be minimized, using Simpson's rule. Assumes that N is odd.
+#     '''
+#     cost = 0
+#     for i in range(N):
+#         cost += h * u[dimension * i]
+#     return cost
+
+
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized, using Simpson's rule. Assumes that N is odd.
+        be minimized, using Simpson's rule.
     '''
-    cost = 0
-    for i in range(N):
-        cost += h * u[dimension * i]
+    cost = h / 6 * (cost_function_continous(0, x[:state_dimension],
+                                            u[:dimension])
+                    + cost_function_continous(T, x[-state_dimension:],
+                                              u[-dimension:]))
+    # First and last term in Simpson, both appear only once
+    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
+    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
+    # First half step of Simpson, not treated within the for-loop
+    for i in range(1, N):
+        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
+                              u[i*dimension:(i+1)*dimension], h / 2)
+        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
+            (i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
+                         # Each of the other non half step terms appears twice
+                         + 2 * cost_function_continous((i + 1/2) * h,
+                                                       x_halfstep,
+                                                       u[dimension*i:
+                                                           dimension*(i+1)]))
     return cost
 
 
@@ -370,7 +396,7 @@ fig2 = plt.figure()
 ax2 = fig2.add_subplot()
 
 fig3 = plt.figure()
-ax3 = fig3.add_subplot()
+axp = fig3.add_subplot(polar=True)
 
 lines = []
 dots = []
@@ -437,15 +463,11 @@ ax2.set_title("Thrust over time")
 ax2.set_xlabel("N")
 ax2.set_ylabel(r"$r(t) / t_{max}$")
 
-phi_line = ax3.plot(np.linspace(0, T,
-                                num=optimal_control_vector.shape[0] // 3),
-                    optimal_control_vector[1::3], "-")
-theta_line = ax3.plot(np.linspace(0, T,
-                                  num=optimal_control_vector.shape[0] // 3),
-                      optimal_control_vector[2::3], "-")
-ax3.set_title("Animation of the control vector")
-ax3.set_xlabel("N")
-ax3.set_ylabel("radiants")
+phi_line = axp.plot(optimal_control_vector[1::3],
+                    np.abs(optimal_control_vector[0::3]) / thrust_max, "-")
+theta_line = axp.plot(optimal_control_vector[2::3],
+                    np.abs(optimal_control_vector[0::3]) / thrust_max, "-")
+axp.set_title("Animation of the control vector")
 
 
 ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
