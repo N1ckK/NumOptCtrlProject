@@ -329,25 +329,25 @@ vrf = 80 / thrust_max
 
 # add animated control vector
 vector = ax.annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
-                                    optimal_trajectory[0, 0 * dimension + 1]),
-                        xy=(
+                                 optimal_trajectory[0, 0 * dimension + 1]),
+                     xy=(
                              optimal_trajectory[0, 0 * dimension] + vrf
                              * optimal_controls[0, 0]
                              * cos(optimal_controls[0, 1]),
                              optimal_trajectory[0, 0 * dimension + 1] + vrf
                              * optimal_controls[0, 0]
                              * sin(optimal_controls[0, 1])),
-                        arrowprops={"facecolor": "red"})
+                     arrowprops={"facecolor": "red"})
 
 objects.append(vector)
 
 for b_index in range(n_body):
     line, = ax.plot(optimal_trajectory[:, b_index * dimension],
-                       optimal_trajectory[:, b_index * dimension + 1],
-                       '--', alpha=0.6)
+                    optimal_trajectory[:, b_index * dimension + 1],
+                    '--', alpha=0.6)
     dot, = ax.plot(optimal_trajectory[0, b_index * dimension],
-                      optimal_trajectory[0, b_index * dimension + 1],
-                      'bo', alpha=1)
+                   optimal_trajectory[0, b_index * dimension + 1],
+                   'bo', alpha=1)
     dots.append(dot)
     lines.append(line)
     objects.append(line)
@@ -391,7 +391,7 @@ def update_polar(num):
 
 optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
 ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//2),
-           ca.fabs(optimal_control_vector[::2])/thrust_max, "--x")
+         ca.fabs(optimal_control_vector[::2])/thrust_max, "--x")
 ax3.set_ylim([0, 1.1])
 ax3.plot([0, T], [1, 1], "--", color="black")
 ax3.set_title("Thrust over time")
