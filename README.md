@@ -6,9 +6,9 @@ ___
 
 <center>
 
-![](orbit2d_ani_and_thrust.gif)
+![](earlier_results/orbit2d_ani_and_thrust.gif)
 
-![](orbit2d_polar.gif)
+![](orbit2d_polar.png)
 
 </center>
 
@@ -18,10 +18,10 @@ ___
 
 <center>
 
-![](orbit3d_ani.gif)
+![](orbit3d_trajectory.png)
 
 ![](orbit3d_thrust.png)
 
-![](orbit3d_angles.png)
+![](orbit3d_polar.png)
 
 </center>
