@@ -36,7 +36,7 @@ thrust_max = 0.0003
 # radius of the planet
 surface = 100
 
-# initial position and velocite of orbiting body
+# initial position and velocity of orbiting body
 v_initial = 2.412
 
 x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
@@ -82,7 +82,8 @@ def ode_general(z, controls, body_masses: tuple, n_body: int, dimension: int):
 
         rhs_acceleration_i = 0
 
-        # calculate the force of body_j on body_i
+        # calculate the force of body_j on body_i (in case there is more
+        # than one body in orbit)
         for j in range(0, n_body):
             # no force of a body on itself
             if i == j:
@@ -147,13 +148,16 @@ orbital_vel = sqrt(sun_mass * grav_const / orbit)
 
 
 def cost_function_continous(t_current, x_current, u_current):
+    '''
+        Cost of a current state and controls.
+    '''
     return u_current[0]
 
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized as a finite Riemann sum.
+        be minimized as a finite Riemann sum. Corresponds to eqn. (25).
     '''
     cost = 0
     for i in range(N):
@@ -166,14 +170,14 @@ constraints = []
 lbg = []
 ubg = []
 
-# constraint: x_0 = x_0_bar
+# constraint: x_0 = x_0_bar (eqn. (27))
 constraints.append(x[0:state_dimension] - x_0_bar)
 lbg += [0] * state_dimension
 ubg += [0] * state_dimension
 
 for i in range(0, N):
     constraints.append(
-        # contraint: x_k+1 - F(x_k, u_k)
+        # contraint: x_k+1 - F(x_k, u_k) (eqn. (26))
         x[(i+1) * state_dimension:(i+2) * state_dimension] - dynamics(
             x[i * state_dimension:(i+1) * state_dimension],
             u[dimension * i:dimension * (i+1)],
@@ -183,25 +187,25 @@ for i in range(0, N):
     lbg += [0] * state_dimension
     ubg += [0] * state_dimension
 
-# contraint: stay above the surface
+# contraint: stay above the surface (eqn. (24))
 for i in range(0, N):
     x_current = x[i * state_dimension:(i+1) * state_dimension]
     constraints.append(ca.norm_2(x_current[0:dimension]))
     lbg += [1.1 * surface]
     ubg += [ca.inf]
 
-# constraint: 0 <= u_k1 = r_k <= thrust_max
+# constraint: 0 <= u_k1 = r_k <= thrust_max (eqn. (23))
 constraints.append(u[::dimension])
 lbg += [0] * N
 ubg += [thrust_max] * N
 
-# constant: limit change of thrust
+# constant: limit change of thrust (eqn. (31))
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i+1) * dimension] - u[i * dimension]))
     lbg += [0]
     ubg += [h * thrust_max / 60]
 
-# contraint: limit change of angle
+# contraint: limit change of angle (eqn. (32))
 for i in range(N-1):
     constraints.append(ca.fabs(u[(i + 1) * dimension + 1]
                                - u[i * dimension + 1]))
@@ -211,7 +215,7 @@ for i in range(N-1):
 # Terminal constraints:
 x_terminal = x[N * state_dimension:(N+1) * state_dimension]
 
-# constraint: reach orbital velocity
+# constraint: reach orbital velocity (eqn. (16))
 constraints.append(
     ca.norm_2(x_terminal[n_body * dimension:(n_body + 1)
                          * dimension]) - orbital_vel
@@ -219,7 +223,7 @@ constraints.append(
 lbg += [0]
 ubg += [0]
 
-# constraint: velocity is perpendicular to orbit normal
+# constraint: velocity is perpendicular to orbit normal (eqn. (17))
 constraints.append(
     ca.dot(x_terminal[n_body * dimension:(n_body + 1) * dimension],
            x_terminal[0:dimension])
@@ -227,7 +231,7 @@ constraints.append(
 lbg += [0]
 ubg += [0]
 
-# constraint: rocket has correct distance to the planet
+# constraint: rocket has correct distance to the planet (eqn. (15))
 constraints.append(
     ca.norm_2(x_terminal[0:dimension]) - orbit
 )
@@ -236,6 +240,9 @@ ubg += [0]
 
 
 constraints = ca.vertcat(*constraints)
+
+J_constraint_expr = ca.jacobian(constraints, ca.vertcat(x, u))
+J_constraint = ca.Function("JC", [ca.vertcat(x, u)], [J_constraint_expr])
 
 nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
        'g': constraints}
@@ -273,6 +280,9 @@ res = solver(
 
 optimal_variables = res["x"].full()
 
+# The contraint jacobian has full rank:
+# print(np.linalg.matrix_rank(J_constraint(optimal_variables)))
+# print(J_constraint(optimal_variables).shape)
 
 # get the optimal trajectory of the orbiting body
 optimal_trajectory = np.reshape(
@@ -301,10 +311,15 @@ for i in range(N, N+terminal_sim):
 
 
 # create a visual plot:
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+fig = plt.figure()
+ax = fig.add_subplot()
+
 lines = []
 dots = []
 objects = []
+
+fig3 = plt.figure()
+ax3 = fig3.add_subplot()
 
 fig2 = plt.figure()
 axp = fig2.add_subplot(polar=True)
@@ -313,7 +328,7 @@ axp = fig2.add_subplot(polar=True)
 vrf = 80 / thrust_max
 
 # add animated control vector
-vector = ax[0].annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
+vector = ax.annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
                                     optimal_trajectory[0, 0 * dimension + 1]),
                         xy=(
                              optimal_trajectory[0, 0 * dimension] + vrf
@@ -327,10 +342,10 @@ vector = ax[0].annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
 objects.append(vector)
 
 for b_index in range(n_body):
-    line, = ax[0].plot(optimal_trajectory[:, b_index * dimension],
+    line, = ax.plot(optimal_trajectory[:, b_index * dimension],
                        optimal_trajectory[:, b_index * dimension + 1],
                        '--', alpha=0.6)
-    dot, = ax[0].plot(optimal_trajectory[0, b_index * dimension],
+    dot, = ax.plot(optimal_trajectory[0, b_index * dimension],
                       optimal_trajectory[0, b_index * dimension + 1],
                       'bo', alpha=1)
     dots.append(dot)
@@ -375,30 +390,29 @@ def update_polar(num):
 
 
 optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
-ax[1].plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//2),
+ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//2),
            ca.fabs(optimal_control_vector[::2])/thrust_max, "--x")
-ax[1].set_ylim([0, 1.1])
-ax[1].plot([0, T], [1, 1], "--", color="black")
-ax[1].set_title("Thrust over time")
-ax[1].set_xlabel("N")
-ax[1].set_ylabel(r"$r(t) / t_{max}$")
+ax3.set_ylim([0, 1.1])
+ax3.plot([0, T], [1, 1], "--", color="black")
+ax3.set_title("Thrust over time")
+ax3.set_xlabel("Time")
+ax3.set_ylabel(r"$r(t) / r_{\max}$")
 
 
 polar_line, = axp.plot(optimal_control_vector[1::2],
                        np.abs(optimal_control_vector[0::2]) / thrust_max, "-")
 axp.set_ylim([0, 1.1])
 axp.set_theta_zero_location("E")
-axp.set_title("Animation of the control vector")
-
+axp.set_title("Polar plot of the controls")
 
 circle = plt.Circle((0, 0), 190, fill=False, alpha=0.03)
-ax[0].add_patch(circle)
+ax.add_patch(circle)
 
 circle = plt.Circle((0, 0), 100, fill=True)
-ax[0].add_patch(circle)
+ax.add_patch(circle)
 
-ax[0].set_aspect('equal', adjustable='box')
-ax[0].set_title("Animated Trajectory")
+ax.set_aspect('equal', adjustable='box')
+ax.set_title("Rocket Trajectory")
 
 ani = animation.FuncAnimation(fig, update,
                               fargs=[optimal_trajectory, objects],
