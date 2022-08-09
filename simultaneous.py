@@ -166,7 +166,9 @@ def cost_function_integral_discrete(x, u):
         x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
                               u[i*dimension:(i+1)*dimension], h / 2)
         cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
-            (i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
+                                                 (i+1)*state_dimension],
+                                                 u[dimension*i:
+                                                     dimension*(i+1)])
                          # Each of the other non half step terms appears twice
                          + 2 * cost_function_continous((i + 1/2) * h,
                                                        x_halfstep,
@@ -260,6 +262,9 @@ ubg += [0]
 
 constraints = ca.vertcat(*constraints)
 
+J_constraint_expr = ca.jacobian(constraints, ca.vertcat(x, u))
+J_constraint = ca.Function("JC", [ca.vertcat(x, u)], [J_constraint_expr])
+
 nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
        'g': constraints}
 
@@ -296,6 +301,9 @@ res = solver(
 
 optimal_variables = res["x"].full()
 
+# The contraint jacobian has full rank:
+# print(np.linalg.matrix_rank(J_constraint(optimal_variables)))
+# print(J_constraint(optimal_variables).shape)
 
 # get the optimal trajectory of the orbiting body
 optimal_trajectory = np.reshape(
@@ -324,10 +332,14 @@ for i in range(N, N+terminal_sim):
 
 # create a visual plot:
 
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+fig = plt.figure()
+ax = fig.add_subplot()
 lines = []
 dots = []
 objects = []
+
+fig3 = plt.figure()
+ax3 = fig3.add_subplot()
 
 fig2 = plt.figure()
 axp = fig2.add_subplot(polar=True)
@@ -336,7 +348,7 @@ axp = fig2.add_subplot(polar=True)
 vrf = 80 / thrust_max
 
 # add animated control vector
-vector = ax[0].annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
+vector = ax.annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
                                     optimal_trajectory[0, 0 * dimension + 1]),
                         xy=(
                              optimal_trajectory[0, 0 * dimension] + vrf
@@ -350,10 +362,10 @@ vector = ax[0].annotate("", xytext=(optimal_trajectory[0, 0 * dimension],
 objects.append(vector)
 
 for b_index in range(n_body):
-    line, = ax[0].plot(optimal_trajectory[:, b_index * dimension],
+    line, = ax.plot(optimal_trajectory[:, b_index * dimension],
                        optimal_trajectory[:, b_index * dimension + 1],
                        '--', alpha=0.6)
-    dot, = ax[0].plot(optimal_trajectory[0, b_index * dimension],
+    dot, = ax.plot(optimal_trajectory[0, b_index * dimension],
                       optimal_trajectory[0, b_index * dimension + 1],
                       'bo', alpha=1)
     dots.append(dot)
@@ -398,30 +410,29 @@ def update_polar(num):
 
 
 optimal_control_vector = optimal_variables[(N + 1) * state_dimension:]
-ax[1].plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//2),
+ax3.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//2),
            ca.fabs(optimal_control_vector[::2])/thrust_max, "--x")
-ax[1].set_ylim([0, 1.1])
-ax[1].plot([0, T], [1, 1], "--", color="black")
-ax[1].set_title("Thrust over time")
-ax[1].set_xlabel("N")
-ax[1].set_ylabel(r"$r(t) / t_{max}$")
+ax3.set_ylim([0, 1.1])
+ax3.plot([0, T], [1, 1], "--", color="black")
+ax3.set_title("Thrust over time")
+ax3.set_xlabel("Time")
+ax3.set_ylabel(r"$r(t) / r_{\max}$")
 
 
 polar_line, = axp.plot(optimal_control_vector[1::2],
                        np.abs(optimal_control_vector[0::2]) / thrust_max, "-")
 axp.set_ylim([0, 1.1])
 axp.set_theta_zero_location("E")
-axp.set_title("Animation of the control vector")
-
+axp.set_title("Polar plot of the controls")
 
 circle = plt.Circle((0, 0), 190, fill=False, alpha=0.03)
-ax[0].add_patch(circle)
+ax.add_patch(circle)
 
 circle = plt.Circle((0, 0), 100, fill=True)
-ax[0].add_patch(circle)
+ax.add_patch(circle)
 
-ax[0].set_aspect('equal', adjustable='box')
-ax[0].set_title("Animated Trajectory")
+ax.set_aspect('equal', adjustable='box')
+ax.set_title("Rocket Trajectory")
 
 ani = animation.FuncAnimation(fig, update,
                               fargs=[optimal_trajectory, objects],

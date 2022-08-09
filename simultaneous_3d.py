@@ -212,7 +212,8 @@ def cost_function_integral_discrete(x, u):
 #                               u[i*dimension:(i+1)*dimension], h / 2)
 #         cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
 #             (i+1)*state_dimension], u[dimension*i:dimension*(i+1)])
-#                          # Each of the other non half step terms appears twice
+#                          # Each of the other non half step terms appears
+#                          # twice
 #                          + 2 * cost_function_continous((i + 1/2) * h,
 #                                                        x_halfstep,
 #                                                        u[dimension*i:
@@ -369,7 +370,7 @@ solver = ca.nlpsol('solver', 'ipopt', nlp)
 
 # build initial guess
 
-v_initial = 3.01496 #sqrt(0.3 ** 2 + 3 ** 2)
+v_initial = 3.01496  # sqrt(0.3 ** 2 + 3 ** 2)
 
 
 x_initial = [1.1 * surface * cos(phi_0_bar) * sin(theta_0_bar),
@@ -482,7 +483,7 @@ y = surface * np.sin(u)*np.sin(v)
 z = surface * np.cos(v)
 ax.plot_wireframe(x, y, z, color="r")
 
-ax.set_title("Animated Trajectory")
+ax.set_title("Rocket Trajectory")
 
 ax.set_xlim((-200, 200))
 ax.set_ylim((-200, 200))
@@ -494,14 +495,14 @@ ax2.plot(np.linspace(0, T, num=optimal_control_vector.shape[0]//3),
 ax2.set_ylim([0, 1.1])
 ax2.plot([0, T], [1, 1], "--", color="black")
 ax2.set_title("Thrust over time")
-ax2.set_xlabel("N")
-ax2.set_ylabel(r"$r(t) / t_{max}$")
+ax2.set_xlabel("Time")
+ax2.set_ylabel(r"$r(t) / r_{\max}$")
 
 phi_line = axp.plot(optimal_control_vector[1::3],
                     np.abs(optimal_control_vector[0::3]) / thrust_max, "-")
 theta_line = axp.plot(optimal_control_vector[2::3],
-                    np.abs(optimal_control_vector[0::3]) / thrust_max, "-")
-axp.set_title("Animation of the control vector")
+                      np.abs(optimal_control_vector[0::3]) / thrust_max, "-")
+axp.set_title("Polar of the control vectors")
 
 
 ani = animation.FuncAnimation(fig, update, fargs=[optimal_trajectory, objects],
