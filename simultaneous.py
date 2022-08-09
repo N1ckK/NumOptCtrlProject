@@ -8,7 +8,7 @@ from math import pi, sin, cos, sqrt
 # Time horizon
 T = 700
 
-# Number of discrete time points
+# Number of discrete time points (N + 1 in the report)
 N = 176
 
 # Stepsize
@@ -17,26 +17,27 @@ h = T / (N - 1)
 # Gravitational constant
 grav_const = 0.0008
 
-# masses of the simulated bodies (rocket, planet)
+# masses of the simulated bodies
 sun_mass = 1000000
+rocket_mass = 0.05
 
 # rocket is always body_0, planet is always body_-1
-body_masses = (0.05, sun_mass)
+body_masses = (rocket_mass, sun_mass)
 
-# number of bodies
+# number of bodies in orbit
 n_body = 1
 
 # dimension to simulate in
 dimension = 2
 
 # maximum thrust of the rocket
-thrust_max = 0.0003  # 0.0009
+thrust_max = 0.0003
 
 # radius of the planet
 surface = 100
 
-# initial position and velocite of orbiting body:
-v_initial = 2.412  # * 0.8
+# initial position and velocite of orbiting body
+v_initial = 2.412
 
 x_0_bar = [surface * 1.1, 0, v_initial * cos(pi/4), v_initial * sin(pi/4)]
 
@@ -104,7 +105,7 @@ def ode_general(z, controls, body_masses: tuple, n_body: int, dimension: int):
                                             - planet_position) ** 3)
                                * (planet_position - body_position_i))
 
-        # body_0 is the actuated rocket
+        # body_0 is the actuated rocket, add control force
         if i == 0:
             r = controls[0]
             phi = controls[1]
@@ -145,35 +146,18 @@ u = ca.SX.sym('u', N * dimension)
 orbital_vel = sqrt(sun_mass * grav_const / orbit)
 
 
-def cost_function_continous(t_current, x_current, u_current=None):
+def cost_function_continous(t_current, x_current, u_current):
     return u_current[0]
 
 
 def cost_function_integral_discrete(x, u):
     '''
         Computes the discretized cost of given state and control variables to
-        be minimized, using Simpson's rule.
+        be minimized as a finite Riemann sum.
     '''
-    cost = h / 6 * (cost_function_continous(0, x[:state_dimension],
-                                            u[:dimension])
-                    + cost_function_continous(T, x[-state_dimension:],
-                                              u[-dimension:]))
-    # First and last term in Simpson, both appear only once
-    x_halfstep = dynamics(x[:state_dimension], u[:dimension], h / 2)
-    cost += h / 3 * cost_function_continous(h / 2, x_halfstep, u[:dimension])
-    # First half step of Simpson, not treated within the for-loop
-    for i in range(1, N):
-        x_halfstep = dynamics(x[i*state_dimension:(i+1)*state_dimension],
-                              u[i*dimension:(i+1)*dimension], h / 2)
-        cost += h / 3 * (cost_function_continous(i * h, x[i*state_dimension:
-                                                 (i+1)*state_dimension],
-                                                 u[dimension*i:
-                                                     dimension*(i+1)])
-                         # Each of the other non half step terms appears twice
-                         + 2 * cost_function_continous((i + 1/2) * h,
-                                                       x_halfstep,
-                                                       u[dimension*i:
-                                                           dimension*(i+1)]))
+    cost = 0
+    for i in range(N):
+        cost += h * u[dimension * i]
     return cost
 
 
@@ -206,7 +190,7 @@ for i in range(0, N):
     lbg += [1.1 * surface]
     ubg += [ca.inf]
 
-# constraint: thrust_max <= u_k1 = r_k <= thrust_max
+# constraint: 0 <= u_k1 = r_k <= thrust_max
 constraints.append(u[::dimension])
 lbg += [0] * N
 ubg += [thrust_max] * N
@@ -216,12 +200,6 @@ for i in range(N-1):
     constraints.append(ca.fabs(u[(i+1) * dimension] - u[i * dimension]))
     lbg += [0]
     ubg += [h * thrust_max / 60]
-
-
-# # constraint: limit maximum angle
-# constraints.append(u[1::dimension])
-# lbg += [-2 * pi] * N
-# ubg += [2 * pi] * N
 
 # contraint: limit change of angle
 for i in range(N-1):
@@ -238,7 +216,6 @@ constraints.append(
     ca.norm_2(x_terminal[n_body * dimension:(n_body + 1)
                          * dimension]) - orbital_vel
 )
-
 lbg += [0]
 ubg += [0]
 
@@ -247,7 +224,6 @@ constraints.append(
     ca.dot(x_terminal[n_body * dimension:(n_body + 1) * dimension],
            x_terminal[0:dimension])
 )
-
 lbg += [0]
 ubg += [0]
 
@@ -255,7 +231,6 @@ ubg += [0]
 constraints.append(
     ca.norm_2(x_terminal[0:dimension]) - orbit
 )
-
 lbg += [0]
 ubg += [0]
 
@@ -330,10 +305,11 @@ for i in range(N, N+terminal_sim):
                                              [0] * 2, h).full().flatten()])
     optimal_controls = np.vstack([optimal_controls, np.array([0, 0])])
 
-# create a visual plot:
 
+# create a visual plot:
 fig = plt.figure()
 ax = fig.add_subplot()
+
 lines = []
 dots = []
 objects = []
