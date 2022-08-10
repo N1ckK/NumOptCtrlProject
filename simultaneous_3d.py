@@ -299,6 +299,10 @@ ubg += [0]
 
 constraints = ca.vertcat(*constraints)
 
+# the jacobian of the contraints
+# J_constraint_expr = ca.jacobian(constraints, ca.vertcat(x, u))
+# J_constraint = ca.Function("JC", [ca.vertcat(x, u)], [J_constraint_expr])
+
 nlp = {'x': ca.vertcat(x, u), 'f': cost_function_integral_discrete(x, u),
        'g': constraints}
 
@@ -340,6 +344,12 @@ res = solver(
 )
 
 optimal_variables = res["x"].full()
+
+
+# The contraint jacobian has full rank:
+# print(np.linalg.matrix_rank(J_constraint(optimal_variables)))
+# print(J_constraint(optimal_variables).shape)
+
 
 # get the optimal trajectory of the orbiting body
 optimal_trajectory = np.reshape(
